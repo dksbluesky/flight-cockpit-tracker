@@ -8,7 +8,8 @@ import { dataAgeSeconds, isStale } from './domain/aircraft.js';
 
 const providerName = import.meta.env.VITE_AIRCRAFT_PROVIDER === 'mock' ? 'mock' : 'live';
 const mockProvider = createMockProvider();
-const liveProvider = createLiveProvider(import.meta.env.VITE_LIVE_API_URL || 'http://127.0.0.1:8787/api/aircraft');
+const defaultLiveApiUrl = import.meta.env.PROD ? 'https://flight-cockpit-proxy.onrender.com/api/aircraft' : 'http://127.0.0.1:8787/api/aircraft';
+const liveProvider = createLiveProvider(import.meta.env.VITE_LIVE_API_URL || defaultLiveApiUrl);
 let activeProviderName = providerName;
 let hasLiveData = false; let lastLiveError = null;
 let language = localStorage.getItem('fct-language') || (navigator.language.startsWith('zh') ? 'zh-TW' : 'en');

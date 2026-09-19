@@ -29,9 +29,12 @@ npm run dev
 
 Open the URL printed by Vite. The status bar shows `Live adsb.lol` and the current aircraft count when the feed is available. If the proxy or live source fails, the app clearly switches to five deterministic sample aircraft.
 
+## Published PWA
+
+The production build is configured for `https://dksbluesky.github.io/flight-cockpit-tracker/` and uses the Render HTTPS proxy. GitHub Actions builds and publishes `dist` after changes reach `main`. The free Render service may sleep while unused, so the first live-data request after inactivity can take longer.
 ## Live data provider
 
-The initial live adapter uses the public `adsb.lol` API, queried within 250 nautical miles of central Taiwan. The browser cannot call the endpoint directly because the verified response did not include a permissive CORS header, so `server/proxy.js` performs the request locally. No API token is currently required.
+The initial live adapter uses the public `adsb.lol` API, queried within 250 nautical miles of central Taiwan. The browser cannot call the endpoint directly because the verified response did not include a permissive CORS header, so `server/proxy.js` performs the request. Production uses the HTTPS Render service at `https://flight-cockpit-proxy.onrender.com`; local development uses `http://127.0.0.1:8787`. No API token is currently required.
 
 Verified provider facts on 2026-09-19:
 

@@ -1,4 +1,4 @@
-const CACHE = 'flight-cockpit-shell-v2';
+const CACHE = 'flight-cockpit-shell-v3';
 const SHELL = ['./', './manifest.webmanifest', './icons/icon-192.svg', './icons/icon-512.svg'];
 
 self.addEventListener('install', (event) => {
