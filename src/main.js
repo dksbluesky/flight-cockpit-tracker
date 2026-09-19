@@ -10,10 +10,22 @@ const providerName = import.meta.env.VITE_AIRCRAFT_PROVIDER === 'mock' ? 'mock' 
 const mockProvider = createMockProvider();
 const defaultLiveApiUrl = import.meta.env.PROD ? 'https://flight-cockpit-proxy.onrender.com/api/aircraft' : 'http://127.0.0.1:8787/api/aircraft';
 const liveProvider = createLiveProvider(import.meta.env.VITE_LIVE_API_URL || defaultLiveApiUrl);
+const locations = [
+  ['taiwan', 'Taiwan', 23.7, 121],
+  ['vhhh', 'VHHH · 香港 Hong Kong', 22.308, 113.9185],
+  ['vmmc', 'VMMC · 澳門 Macau', 22.1496, 113.5915],
+  ['wsss', 'WSSS · 新加坡 Singapore', 1.3644, 103.9915],
+  ['rksi', 'RKSI · 首爾仁川 Incheon', 37.4602, 126.4407],
+  ['rjtt', 'RJTT · 東京羽田 Haneda', 35.5494, 139.7798],
+  ['kjfk', 'KJFK · 紐約 JFK', 40.6413, -73.7781],
+  ['klax', 'KLAX · 洛杉磯 L.A.', 33.9416, -118.4085]
+];
 let activeProviderName = providerName;
 let hasLiveData = false; let lastLiveError = null;
 let language = localStorage.getItem('fct-language') || (navigator.language.startsWith('zh') ? 'zh-TW' : 'en');
 let filter = 'all'; let aircraft = []; let selected = null; let cockpitRenderer = null; let deferredInstallPrompt = null;
+let searchLocation = { key: 'taiwan', latitude: 23.7, longitude: 121, distanceNm: 250 };
+let mapView = null;
 const app = document.querySelector('#app');
 
 const value = (input, suffix = '') => Number.isFinite(input) ? `${Math.round(input).toLocaleString('en-US')}${suffix}` : strings[language].unavailable;
@@ -28,12 +40,24 @@ function renderShell() {
       <div id="status" class="status">${providerName === 'mock' ? t.mock : t.live}</div>
       <section class="workspace"><div class="map-wrap"><div id="map"></div><nav class="filters">
         <button data-filter="all">${t.all}</button><button data-filter="civilian">${t.civilian}</button><button data-filter="possible-military">${t.military}</button>
-      </nav></div><aside id="panel" class="panel"></aside></section>
+      </nav><form id="location-picker" class="location-picker">
+        <select id="location" aria-label="${t.location}">${locations.map(([key, label]) => `<option value="${key}" ${key === searchLocation.key ? 'selected' : ''}>${label}</option>`).join('')}<option value="custom" ${searchLocation.key === 'custom' ? 'selected' : ''}>${t.custom}</option></select>
+        <input id="latitude" type="number" min="-90" max="90" step="any" value="${searchLocation.latitude}" aria-label="${t.latitude}" placeholder="${t.latitude}">
+        <input id="longitude" type="number" min="-180" max="180" step="any" value="${searchLocation.longitude}" aria-label="${t.longitude}" placeholder="${t.longitude}">
+        <button type="submit">${t.load}</button>
+      </form></div><aside id="panel" class="panel"></aside></section>
     </main>
     <section id="cockpit" class="cockpit hidden" aria-label="${t.simulated}"><h1 class="cockpit-title">${t.simulated}</h1><div id="cockpit-scene"></div><div id="hud" class="hud"></div><button id="return" class="action return">← ${t.return}</button></section>`;
   document.querySelector('#language').value = language;
-  document.querySelector('#language').addEventListener('change', (event) => { language = event.target.value; localStorage.setItem('fct-language', language); map.destroy(); closeCockpit(); renderShell(); initialize(); });
+  document.querySelector('#language').addEventListener('change', (event) => { language = event.target.value; localStorage.setItem('fct-language', language); closeCockpit(); mapView = map.getView(); map.destroy(); renderShell(); initialize(); });
   document.querySelectorAll('[data-filter]').forEach((button) => { button.classList.toggle('active', button.dataset.filter === filter); button.addEventListener('click', () => { filter = button.dataset.filter; renderAircraft(); }); });
+  const locationSelect = document.querySelector('#location');
+  locationSelect.addEventListener('change', () => {
+    const preset = locations.find(([key]) => key === locationSelect.value);
+    if (preset) { document.querySelector('#latitude').value = preset[2]; document.querySelector('#longitude').value = preset[3]; }
+  });
+  ['#latitude', '#longitude'].forEach((selector) => document.querySelector(selector).addEventListener('input', () => { locationSelect.value = 'custom'; }));
+  document.querySelector('#location-picker').addEventListener('submit', changeLocation);
   document.querySelector('#return').addEventListener('click', closeCockpit);
   const install = document.querySelector('#install');
   if (deferredInstallPrompt) install.hidden = false;
@@ -41,8 +65,17 @@ function renderShell() {
 }
 
 let map;
+async function changeLocation(event) {
+  event.preventDefault();
+  const latitude = Number(document.querySelector('#latitude').value);
+  const longitude = Number(document.querySelector('#longitude').value);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
+  searchLocation = { key: document.querySelector('#location').value, latitude, longitude, distanceNm: 250 };
+  selected = null; aircraft = []; map.setSelected(null); renderAircraft(); renderPanel(); map.goTo(longitude, latitude);
+  await refresh();
+}
 function scheduleViewportRefresh() { updateAircraftStatus(); }
-function initialize() { map = createTrackingMap(document.querySelector('#map'), selectAircraft, scheduleViewportRefresh); renderPanel(); renderAircraft(); }
+function initialize() { map = createTrackingMap(document.querySelector('#map'), selectAircraft, scheduleViewportRefresh, mapView || { center: [searchLocation.longitude, searchLocation.latitude], zoom: 6.25 }); renderPanel(); renderAircraft(); }
 function filteredAircraft() { return filter === 'all' ? aircraft : aircraft.filter((item) => item.classification === filter); }
 function updateAircraftStatus() {
   const status = document.querySelector('#status'); if (!status || !map) return;
@@ -81,18 +114,24 @@ function renderPanel() {
 function openCockpit() {
   if (!selected || isStale(selected)) return;
   document.querySelector('#cockpit').classList.remove('hidden');
-  cockpitRenderer = createCockpitRenderer(document.querySelector('#cockpit-scene'));
+  map.pause();
+  cockpitRenderer = createCockpitRenderer(document.querySelector('#cockpit-scene'), renderCockpitHud);
   updateCockpit();
 }
-function closeCockpit() { document.querySelector('#cockpit')?.classList.add('hidden'); cockpitRenderer?.destroy(); cockpitRenderer = null; }
+function closeCockpit() { document.querySelector('#cockpit')?.classList.add('hidden'); cockpitRenderer?.destroy(); cockpitRenderer = null; map?.resume(); }
 function updateCockpit() {
   if (!cockpitRenderer || !selected) return;
-  cockpitRenderer.update(selected); const t = strings[language];
-  const speedKt = selected.groundSpeedMps * 1.94384;
-  const altitudeFt = selected.altitudeM * 3.28084;
-  const verticalFpm = selected.verticalRateMps * 196.85;
-  const track = ((selected.track || 0) + 360) % 360;
-  const pitch = Math.atan2(selected.verticalRateMps || 0, Math.max(1, selected.groundSpeedMps || 0)) * 180 / Math.PI;
+  cockpitRenderer.update(selected);
+  renderCockpitHud(selected);
+}
+function renderCockpitHud(displayed) {
+  if (!displayed || !cockpitRenderer) return;
+  const t = strings[language];
+  const speedKt = displayed.groundSpeedMps * 1.94384;
+  const altitudeFt = displayed.altitudeM * 3.28084;
+  const verticalFpm = displayed.verticalRateMps * 196.85;
+  const track = ((displayed.track || 0) + 360) % 360;
+  const pitch = Math.atan2(displayed.verticalRateMps || 0, Math.max(1, displayed.groundSpeedMps || 0)) * 180 / Math.PI;
   const fmt = (number) => Number.isFinite(number) ? Math.round(number).toLocaleString('en-US') : '---';
   const speedTicks = [-40, -20, 0, 20, 40].map((offset, index) => `<g transform="translate(0 ${index * 45})"><line x1="0" x2="18"/><text x="25" y="6">${fmt(speedKt + offset)}</text></g>`).join('');
   const altitudeTicks = [400, 200, 0, -200, -400].map((offset, index) => `<g transform="translate(0 ${index * 45})"><line x1="22" x2="40"/><text x="15" y="6" text-anchor="end">${fmt(altitudeFt + offset)}</text></g>`).join('');
@@ -105,7 +144,7 @@ function updateCockpit() {
   document.querySelector('#hud').innerHTML = `
     <svg class="hud-svg" viewBox="0 0 1000 600" role="img" aria-label="${t.simulated}">
       <g class="hud-glow">
-        <text class="hud-mode" x="500" y="30" text-anchor="middle">SIMULATED COCKPIT VIEW · ${selected.callsign || selected.id}</text>
+        <text class="hud-mode" x="500" y="30" text-anchor="middle">SIMULATED COCKPIT VIEW · ${displayed.callsign || displayed.id}</text>
         <g class="bank-scale" transform="translate(500 80)">
           <path d="M-125 25 A128 128 0 0 1 125 25"/>
           <line x1="-112" y1="-8" x2="-101" y2="1"/><line x1="-82" y1="-35" x2="-73" y2="-23"/><line x1="-43" y1="-51" x2="-38" y2="-36"/>
@@ -125,7 +164,7 @@ function updateCockpit() {
         <g class="flight-path-marker" transform="translate(500 300)"><circle r="13"/><line x1="-58" x2="-13"/><line x1="13" x2="58"/><line x1="-58" y1="0" x2="-58" y2="15"/><line x1="58" y1="0" x2="58" y2="15"/><line y1="-22" y2="-13"/></g>
         <text class="vertical-rate-text" x="865" y="430" text-anchor="middle">V/S ${verticalFpm >= 0 ? '+' : '−'}${fmt(Math.abs(verticalFpm))} FPM</text>
         <g class="nav-arc" transform="translate(500 570)"><path d="M-110 15 A112 112 0 0 1 110 15"/><line x1="-94" y1="-43" x2="-82" y2="-35"/><line x1="-55" y1="-80" x2="-47" y2="-67"/><line y1="-94" y2="-77"/><line x1="55" y1="-80" x2="47" y2="-67"/><line x1="94" y1="-43" x2="82" y2="-35"/><path d="M-8 -70 L0 -84 L8 -70"/><text x="0" y="-44" text-anchor="middle">TRK ${fmt(track)}°</text></g>
-        <text class="hud-age" x="25" y="575">DATA ${fmt(dataAgeSeconds(selected))}s · ${selected.source}</text>
+        <text class="hud-age" x="25" y="575">DATA ${fmt(dataAgeSeconds(displayed))}s · ${displayed.source}</text>
       </g>
     </svg>`;
 }
@@ -134,7 +173,7 @@ async function refresh() {
   try {
     let liveError = null;
     if (providerName === 'live' && navigator.onLine) {
-      try { aircraft = await liveProvider.getAircraft(); activeProviderName = 'live'; hasLiveData = true; }
+      try { aircraft = await liveProvider.getAircraft(searchLocation); activeProviderName = 'live'; hasLiveData = true; }
       catch (error) {
         liveError = error;
         if (!hasLiveData) { aircraft = await mockProvider.getAircraft(); activeProviderName = 'mock'; }

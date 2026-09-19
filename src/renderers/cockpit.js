@@ -17,13 +17,14 @@ function createSimulatedRunway() {
   group.visible = false;
   return group;
 }
-export function createCockpitRenderer(container) {
+export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x6da9cb);
   scene.fog = new THREE.Fog(0x8fb8c9, 9000, 85000);
   const camera = new THREE.PerspectiveCamera(62, 1, 1, 140000);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const mobilePixelRatio = window.matchMedia('(pointer: coarse)').matches ? 1.25 : 2;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobilePixelRatio));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
@@ -50,7 +51,8 @@ export function createCockpitRenderer(container) {
   const sun = new THREE.DirectionalLight(0xffefbd, 2.2); sun.position.set(-20000, 35000, -15000); scene.add(sun);
   const simulatedRunway = createSimulatedRunway(); scene.add(simulatedRunway);
 
-  let frame; let aircraft; let origin; let runwayPositioned = false; let previousTime = performance.now();
+  let frame; let aircraft; let origin; let previousTime = performance.now();
+  let reportReceivedAt = performance.now(); let lastHudUpdate = 0;
   const smoothedPosition = new THREE.Vector3();
   const desiredPosition = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
@@ -65,7 +67,12 @@ export function createCockpitRenderer(container) {
     const deltaSeconds = Math.min(0.1, Math.max(0.001, (time - previousTime) / 1000));
     previousTime = time;
     if (aircraft) {
-      const model = cockpitCamera(aircraft);
+      const extrapolationSeconds = Math.min(12, Math.max(0, (time - reportReceivedAt) / 1000));
+      const displayAircraft = {
+        ...aircraft,
+        altitudeM: Math.max(0, aircraft.altitudeM + (Number.isFinite(aircraft.verticalRateMps) ? aircraft.verticalRateMps * extrapolationSeconds : 0))
+      };
+      const model = cockpitCamera(displayAircraft);
       if (model) {
         origin ||= { latitude: model.position.latitude, longitude: model.position.longitude };
         const offset = localOffsetMeters(origin, model.position);
@@ -73,12 +80,20 @@ export function createCockpitRenderer(container) {
         terrain.visible = showSurface;
         referenceGrid.visible = showSurface;
         simulatedRunway.visible = showSurface;
-        if (simulatedRunway.visible && !runwayPositioned) {
+        if (simulatedRunway.visible) {
           const runwayTrack = model.track * Math.PI / 180;
-          const distanceAheadM = 18000;
-          simulatedRunway.position.set(Math.sin(runwayTrack) * distanceAheadM, 0, -Math.cos(runwayTrack) * distanceAheadM);
+          const distanceAheadM = Math.min(5500, Math.max(2500, 2500 + model.position.altitudeM * 3));
+          simulatedRunway.position.set(
+            offset.eastM + Math.sin(runwayTrack) * distanceAheadM,
+            0,
+            -offset.northM - Math.cos(runwayTrack) * distanceAheadM
+          );
           simulatedRunway.rotation.y = -runwayTrack;
-          runwayPositioned = true;
+          const altitudeFt = model.position.altitudeM / 0.3048;
+          const opacity = Math.min(1, Math.max(0.3, 1 - (altitudeFt - 300) / 3800));
+          simulatedRunway.traverse((object) => {
+            if (object.material) { object.material.transparent = true; object.material.opacity = opacity; }
+          });
         }
         const visualAltitude = Math.max(240, model.position.altitudeM * 0.34);
         desiredPosition.set(offset.eastM, visualAltitude, -offset.northM);
@@ -86,7 +101,7 @@ export function createCockpitRenderer(container) {
         smoothedPosition.lerp(desiredPosition, smoothing);
         camera.position.copy(smoothedPosition);
         const trackRad = model.track * Math.PI / 180;
-        const climbAngle = Math.atan2(aircraft.verticalRateMps || 0, Math.max(1, aircraft.groundSpeedMps || 0));
+        const climbAngle = Math.atan2(displayAircraft.verticalRateMps || 0, Math.max(1, displayAircraft.groundSpeedMps || 0));
         const lookDistance = 15000;
         lookTarget.set(
           smoothedPosition.x + Math.sin(trackRad) * lookDistance,
@@ -94,10 +109,11 @@ export function createCockpitRenderer(container) {
           smoothedPosition.z - Math.cos(trackRad) * lookDistance
         );
         camera.lookAt(lookTarget);
+        if (time - lastHudUpdate >= 150) { lastHudUpdate = time; onDisplayUpdate(displayAircraft); }
       }
     }
     renderer.render(scene, camera);
   }
   animate(performance.now());
-  return { update(next) { aircraft = next; }, destroy() { cancelAnimationFrame(frame); renderer.dispose(); terrainGeometry.dispose(); container.replaceChildren(); } };
+  return { update(next) { aircraft = next; reportReceivedAt = performance.now(); }, destroy() { cancelAnimationFrame(frame); renderer.dispose(); terrainGeometry.dispose(); container.replaceChildren(); } };
 }

@@ -1,7 +1,7 @@
 :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #eaf8ff; background: #071726; color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; overflow: hidden; }
-button, select { font: inherit; }
+button, select, input { font: inherit; }
 .shell { height: 100dvh; display: grid; grid-template-rows: auto auto 1fr; background: #071726; }
 .topbar { min-height: 62px; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #27455b; background: rgba(7,23,38,.97); }
 .brand { display: grid; margin-right: auto; } .brand strong { color: #f3c969; } .brand small { color: #8eb3c7; }
@@ -14,13 +14,16 @@ button, select { font: inherit; }
 .filters { position: absolute; z-index: 4; left: 12px; top: 12px; display: flex; gap: 6px; padding: 6px; background: rgba(7,23,38,.88); border-radius: 12px; }
 .filters button { border: 0; border-radius: 8px; padding: 8px 10px; background: transparent; color: #d7edf6; cursor: pointer; }
 .filters button.active { background: #26d9c7; color: #041315; }
+.location-picker { position: absolute; z-index: 5; left: 12px; top: 66px; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 70px); padding: 6px; border-radius: 10px; background: rgba(7,23,38,.88); }
+.location-picker select, .location-picker input, .location-picker button { min-width: 0; border: 1px solid #3d697f; border-radius: 7px; padding: 6px 8px; background: #102b3d; color: #eaf8ff; }
+.location-picker input { width: 94px; }.location-picker button { cursor: pointer; background: #dba93b; color: #161106; font-weight: 700; }
 .panel { overflow: auto; padding: 18px; background: #0b2233; border-left: 1px solid #27455b; }
 .panel h2 { font-size: 18px; margin-top: 0; } .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
 .detail { padding: 8px; background: #102c40; border-radius: 8px; } .detail small { color: #8eb3c7; display: block; } .detail strong { font-size: 14px; }
 .notice { color: #b9d5e2; font-size: 13px; line-height: 1.45; } .warning { color: #f3c969; }
 .action { width: 100%; background: #dba93b; color: #161106; border-color: #f3c969; font-weight: 700; } .action:disabled { opacity: .45; cursor: not-allowed; }
 .aircraft-marker { position: relative; width: 34px; height: 34px; overflow: visible; border: 2px solid #fff; border-radius: 50%; background: #1bb5a8; color: #fff; box-shadow: 0 2px 9px #001; cursor: pointer; }
-.aircraft-marker .marker-icon { display: block; width: 21px; height: 21px; margin: 0 auto; font-size: 20px; line-height: 21px; transform: rotate(calc(var(--heading) - 45deg)); transform-origin: center; transition: transform .7s linear; }.aircraft-marker.possible-military { background: #d89b31; }.aircraft-marker.unknown { background: #667784; }
+.aircraft-marker .marker-icon { display: block; width: 22px; height: 22px; margin: 0 auto; transform: rotate(var(--heading)); transform-origin: center; transition: transform .7s linear; }.aircraft-marker .marker-icon svg { display: block; width: 100%; height: 100%; fill: currentColor; }.aircraft-marker.possible-military { background: #d89b31; }.aircraft-marker.unknown { background: #667784; }
 .aircraft-marker.possible-approach { background: #e95d3f; border-color: #ffe1d8; box-shadow: 0 0 0 4px rgba(233,93,63,.22), 0 3px 12px #001; }
 .aircraft-marker.selected { background: #ffd43b; color: #071726; border-color: #fff7b0; box-shadow: 0 0 0 5px rgba(255,212,59,.28), 0 3px 14px #001; transform: scale(1.18); }
 .aircraft-marker .marker-label { position: absolute; left: 38px; top: 50%; display: block; min-width: max-content; padding: 2px 5px; transform: translateY(-50%); border-radius: 4px; background: rgba(5,24,36,.82); color: #f1fbff; font-size: 11px; font-weight: 700; line-height: 1.25; text-shadow: none; pointer-events: none; }
@@ -30,7 +33,7 @@ button, select { font: inherit; }
 .hud { position: absolute; z-index: 3; inset: 70px 18px auto 18px; display: grid; grid-template-columns: repeat(5, minmax(80px, 1fr)); gap: 8px; pointer-events: none; }
 .hud div { padding: 8px; text-align: center; border: 1px solid #6ce0d3; color: #cffff9; background: rgba(2,25,26,.55); font-variant-numeric: tabular-nums; }
 .return { position: absolute; z-index: 4; left: 18px; bottom: max(18px, env(safe-area-inset-bottom)); width: auto; }
-@media (max-width: 760px) { .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(52%, 1fr) auto; } .panel { max-height: 39dvh; border-left: 0; border-top: 1px solid #27455b; padding: 12px; } .detail-grid { grid-template-columns: repeat(3, 1fr); } .topbar { padding: 8px 10px; }.brand small { display: none; }.filters { overflow-x: auto; max-width: calc(100vw - 24px); }.hud { grid-template-columns: repeat(2, 1fr); inset: 58px 10px auto; }.hud div:last-child { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(52%, 1fr) auto; } .panel { max-height: 39dvh; border-left: 0; border-top: 1px solid #27455b; padding: 12px; } .detail-grid { grid-template-columns: repeat(3, 1fr); } .topbar { padding: 8px 10px; }.brand small { display: none; }.filters { overflow-x: auto; max-width: calc(100vw - 24px); }.location-picker { top: 62px; }.location-picker select { width: 170px; }.location-picker input { width: 80px; }.hud { grid-template-columns: repeat(2, 1fr); inset: 58px 10px auto; }.hud div:last-child { grid-column: 1 / -1; } }
 
 /* Aviation-style simulated HUD */
 .hud { position: absolute; z-index: 3; inset: 0; display: block; pointer-events: none; color: #8dffb1; font-family: "Consolas", "SFMono-Regular", monospace; text-shadow: 0 0 7px rgba(71,255,133,.7); }

@@ -2,16 +2,17 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { isPossibleApproach } from '../domain/aircraft.js';
 
-export function createTrackingMap(container, onSelect, onViewportChange = () => {}) {
+export function createTrackingMap(container, onSelect, onViewportChange = () => {}, initialView = {}) {
   const entries = new Map();
   let selectedId = null;
   let animationFrame;
+  let paused = false;
   let trailReady = false;
 
   const map = new maplibregl.Map({
     container,
-    center: [120.96, 23.7],
-    zoom: 6.25,
+    center: initialView.center || [120.96, 23.7],
+    zoom: initialView.zoom ?? 6.25,
     style: {
       version: 8,
       sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
@@ -54,7 +55,7 @@ export function createTrackingMap(container, onSelect, onViewportChange = () => 
     button.className = 'aircraft-marker';
     const icon = document.createElement('span');
     icon.className = 'marker-icon';
-    icon.textContent = '✈';
+    icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5c-1 0-1.55 1.05-1.55 2.2v5.05L3.2 13.1v2.25l7.25-2.15v4.65l-2.15 1.5v1.65L12 20l3.7 1v-1.65l-2.15-1.5V13.2l7.25 2.15V13.1l-7.25-4.35V3.7C13.55 2.55 13 1.5 12 1.5Z"/></svg>';
     const label = document.createElement('span');
     label.className = 'marker-label';
     button.append(icon, label);
@@ -73,12 +74,13 @@ export function createTrackingMap(container, onSelect, onViewportChange = () => 
     for (const entry of entries.values()) {
       const { aircraft, button, label } = entry;
       button.className = `aircraft-marker ${aircraft.classification || 'unknown'}${entry.approach ? ' possible-approach' : ''}${aircraft.id === selectedId ? ' selected' : ''}`;
-      button.style.setProperty('--heading', `${aircraft.heading ?? aircraft.track ?? 0}deg`);
+      button.style.setProperty('--heading', `${aircraft.track ?? aircraft.heading ?? 0}deg`);
       label.textContent = aircraft.callsign || aircraft.registration || aircraft.id.toUpperCase();
     }
   }
 
   function animate(time) {
+    if (paused) return;
     let trailsChanged = false;
     for (const entry of entries.values()) {
       const progress = Math.min(1, (time - entry.startedAt) / 2800);
@@ -125,7 +127,11 @@ export function createTrackingMap(container, onSelect, onViewportChange = () => 
       const bounds = map.getBounds();
       return aircraftList.filter((aircraft) => bounds.contains([aircraft.longitude, aircraft.latitude])).length;
     },
+    goTo: (longitude, latitude) => map.flyTo({ center: [longitude, latitude], zoom: 6.25, essential: true }),
+    getView: () => ({ center: map.getCenter().toArray(), zoom: map.getZoom() }),
     resize: () => map.resize(),
+    pause: () => { paused = true; cancelAnimationFrame(animationFrame); },
+    resume: () => { if (!paused) return; paused = false; animationFrame = requestAnimationFrame(animate); map.resize(); },
     destroy: () => {
       cancelAnimationFrame(animationFrame);
       for (const entry of entries.values()) entry.marker.remove();
