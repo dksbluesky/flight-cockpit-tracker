@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: flight-cockpit-proxy
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run proxy
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: ALLOWED_ORIGINS
+        value: https://dksbluesky.github.io
