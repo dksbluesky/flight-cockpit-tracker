@@ -56,10 +56,11 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
   const smoothedPosition = new THREE.Vector3();
   const desiredPosition = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
+  const viewDirection = new THREE.Vector3();
 
   function resize() {
     const width = container.clientWidth || 1; const height = container.clientHeight || 1;
-    renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix();
+    renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix();
   }
 
   function animate(time) {
@@ -80,26 +81,18 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
         terrain.visible = showSurface;
         referenceGrid.visible = showSurface;
         simulatedRunway.visible = showSurface;
+        const visualAltitude = Math.max(240, model.position.altitudeM * 0.34);
+        desiredPosition.set(offset.eastM, visualAltitude, -offset.northM);
+        const smoothing = 1 - Math.exp(-deltaSeconds * 2.8);
+        smoothedPosition.lerp(desiredPosition, smoothing);
+        camera.position.copy(smoothedPosition);
         if (simulatedRunway.visible) {
-          const runwayTrack = model.track * Math.PI / 180;
-          const distanceAheadM = Math.min(5500, Math.max(2500, 2500 + model.position.altitudeM * 3));
-          simulatedRunway.position.set(
-            offset.eastM + Math.sin(runwayTrack) * distanceAheadM,
-            0,
-            -offset.northM - Math.cos(runwayTrack) * distanceAheadM
-          );
-          simulatedRunway.rotation.y = -runwayTrack;
           const altitudeFt = model.position.altitudeM / 0.3048;
           const opacity = Math.min(1, Math.max(0.3, 1 - (altitudeFt - 300) / 3800));
           simulatedRunway.traverse((object) => {
             if (object.material) { object.material.transparent = true; object.material.opacity = opacity; }
           });
         }
-        const visualAltitude = Math.max(240, model.position.altitudeM * 0.34);
-        desiredPosition.set(offset.eastM, visualAltitude, -offset.northM);
-        const smoothing = 1 - Math.exp(-deltaSeconds * 2.8);
-        smoothedPosition.lerp(desiredPosition, smoothing);
-        camera.position.copy(smoothedPosition);
         const trackRad = model.track * Math.PI / 180;
         const climbAngle = Math.atan2(displayAircraft.verticalRateMps || 0, Math.max(1, displayAircraft.groundSpeedMps || 0));
         const lookDistance = 15000;
@@ -109,6 +102,18 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
           smoothedPosition.z - Math.cos(trackRad) * lookDistance
         );
         camera.lookAt(lookTarget);
+        if (simulatedRunway.visible) {
+          camera.getWorldDirection(viewDirection);
+          viewDirection.y = 0;
+          viewDirection.normalize();
+          const distanceAheadM = Math.min(5500, Math.max(2500, 2500 + model.position.altitudeM * 3));
+          simulatedRunway.position.set(
+            camera.position.x + viewDirection.x * distanceAheadM,
+            0,
+            camera.position.z + viewDirection.z * distanceAheadM
+          );
+          simulatedRunway.rotation.y = -Math.atan2(viewDirection.x, -viewDirection.z);
+        }
         if (time - lastHudUpdate >= 150) { lastHudUpdate = time; onDisplayUpdate(displayAircraft); }
       }
     }
