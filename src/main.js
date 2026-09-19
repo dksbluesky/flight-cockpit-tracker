@@ -11,7 +11,7 @@ const mockProvider = createMockProvider();
 const defaultLiveApiUrl = import.meta.env.PROD ? 'https://flight-cockpit-proxy.onrender.com/api/aircraft' : 'http://127.0.0.1:8787/api/aircraft';
 const liveProvider = createLiveProvider(import.meta.env.VITE_LIVE_API_URL || defaultLiveApiUrl);
 const locations = [
-  ['taiwan', 'Taiwan', 23.7, 121],
+  ['taiwan', 'Taiwan · 台灣', 23.7, 121],
   ['vhhh', 'VHHH · 香港 Hong Kong', 22.308, 113.9185],
   ['vmmc', 'VMMC · 澳門 Macau', 22.1496, 113.5915],
   ['wsss', 'WSSS · 新加坡 Singapore', 1.3644, 103.9915],
