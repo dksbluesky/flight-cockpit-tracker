@@ -27,6 +27,7 @@ let filter = 'all'; let aircraft = []; let selected = null; let cockpitRenderer 
 let searchLocation = { key: 'taiwan', latitude: 23.7, longitude: 121, distanceNm: 250 };
 let mapView = null;
 const app = document.querySelector('#app');
+let infoPanelOpen = true;
 
 const value = (input, suffix = '') => Number.isFinite(input) ? `${Math.round(input).toLocaleString('en-US')}${suffix}` : strings[language].unavailable;
 const classificationLabel = (item) => item.classification === 'possible-military' ? strings[language].military : item.classification === 'civilian' ? strings[language].civilian : strings[language].unknown;
@@ -92,13 +93,16 @@ function renderAircraft() {
   updateAircraftStatus();
 }
 function selectAircraft(item) {
+  const sameAircraft = selected?.id === item.id;
   selected = aircraft.find((current) => current.id === item.id) || item;
+  infoPanelOpen = sameAircraft ? !infoPanelOpen : true;
   map.setSelected(selected.id);
   renderPanel();
 }
 
 function renderPanel() {
   const t = strings[language]; const panel = document.querySelector('#panel'); if (!panel) return;
+  document.querySelector('.workspace')?.classList.toggle('panel-retracted', !infoPanelOpen);
   if (!selected) { panel.innerHTML = `<h2>${t.map}</h2><p>${t.select}</p><p class="notice">${t.heuristic}</p><p class="notice">${t.disclaimer}</p>`; return; }
   const age = dataAgeSeconds(selected); const stale = isStale(selected);
   const details = [
@@ -118,7 +122,12 @@ function openCockpit() {
   cockpitRenderer = createCockpitRenderer(document.querySelector('#cockpit-scene'), renderCockpitHud);
   updateCockpit();
 }
-function closeCockpit() { document.querySelector('#cockpit')?.classList.add('hidden'); cockpitRenderer?.destroy(); cockpitRenderer = null; map?.resume(); }
+function closeCockpit() {
+  const cockpit = document.querySelector('#cockpit');
+  const wasOpen = cockpit && !cockpit.classList.contains('hidden');
+  cockpit?.classList.add('hidden'); cockpitRenderer?.destroy(); cockpitRenderer = null; map?.resume();
+  if (wasOpen) { infoPanelOpen = false; renderPanel(); }
+}
 function updateCockpit() {
   if (!cockpitRenderer || !selected) return;
   cockpitRenderer.update(selected);

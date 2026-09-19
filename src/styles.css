@@ -9,6 +9,7 @@ button, select, input { font: inherit; }
 .status { padding: 7px 16px; font-size: 13px; background: #102b3d; color: #9fc6d8; }
 .status.error { color: #ffb4a8; background: #3b1c21; }
 .workspace { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 330px; }
+.workspace.panel-retracted { grid-template-columns: 1fr; }.workspace.panel-retracted .panel { display: none; }
 #map, #cockpit-scene { width: 100%; height: 100%; min-height: 0; }
 .map-wrap { position: relative; min-height: 0; }
 .filters { position: absolute; z-index: 4; left: 12px; top: 12px; display: flex; gap: 6px; padding: 6px; background: rgba(7,23,38,.88); border-radius: 12px; }
@@ -33,7 +34,7 @@ button, select, input { font: inherit; }
 .hud { position: absolute; z-index: 3; inset: 70px 18px auto 18px; display: grid; grid-template-columns: repeat(5, minmax(80px, 1fr)); gap: 8px; pointer-events: none; }
 .hud div { padding: 8px; text-align: center; border: 1px solid #6ce0d3; color: #cffff9; background: rgba(2,25,26,.55); font-variant-numeric: tabular-nums; }
 .return { position: absolute; z-index: 4; left: 18px; bottom: max(18px, env(safe-area-inset-bottom)); width: auto; }
-@media (max-width: 760px) { .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(52%, 1fr) auto; } .panel { max-height: 39dvh; border-left: 0; border-top: 1px solid #27455b; padding: 12px; } .detail-grid { grid-template-columns: repeat(3, 1fr); } .topbar { padding: 8px 10px; }.brand small { display: none; }.filters { overflow-x: auto; max-width: calc(100vw - 24px); }.location-picker { top: 62px; }.location-picker select { width: 170px; }.location-picker input { width: 80px; }.hud { grid-template-columns: repeat(2, 1fr); inset: 58px 10px auto; }.hud div:last-child { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(52%, 1fr) auto; } .workspace.panel-retracted { grid-template-rows: 1fr; } .panel { max-height: 39dvh; border-left: 0; border-top: 1px solid #27455b; padding: 12px; } .detail-grid { grid-template-columns: repeat(3, 1fr); } .topbar { padding: 8px 10px; }.brand small { display: none; }.filters { overflow-x: auto; max-width: calc(100vw - 24px); }.location-picker { top: 62px; }.location-picker select { width: 170px; }.location-picker input { width: 80px; }.hud { grid-template-columns: repeat(2, 1fr); inset: 58px 10px auto; }.hud div:last-child { grid-column: 1 / -1; } }
 
 /* Aviation-style simulated HUD */
 .hud { position: absolute; z-index: 3; inset: 0; display: block; pointer-events: none; color: #8dffb1; font-family: "Consolas", "SFMono-Regular", monospace; text-shadow: 0 0 7px rgba(71,255,133,.7); }
