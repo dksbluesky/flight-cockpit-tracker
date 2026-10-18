@@ -164,10 +164,12 @@ async function enableDeviceTilt() {
 function startTiltListening() {
   if (tiltListening) return;
   window.addEventListener('deviceorientation', handleDeviceOrientation);
+  window.addEventListener('orientationchange', handleScreenOrientationChange);
   tiltListening = true;
 }
 function stopTiltListening() {
   if (tiltListening) window.removeEventListener('deviceorientation', handleDeviceOrientation);
+  if (tiltListening) window.removeEventListener('orientationchange', handleScreenOrientationChange);
   tiltListening = false;
   tiltBaseline = null;
   latestTilt = null;
@@ -175,11 +177,22 @@ function stopTiltListening() {
 }
 function orientationAxes(event) {
   if (!Number.isFinite(event.beta) || !Number.isFinite(event.gamma)) return null;
-  const angle = Number(screen.orientation?.angle ?? window.orientation ?? 0);
+  const screenAngle = Number(screen.orientation?.angle);
+  const legacyAngle = Number(window.orientation);
+  const landscape = window.innerWidth > window.innerHeight;
+  const angle = [90, 270, -90].includes(screenAngle) ? screenAngle
+    : [90, 270, -90].includes(legacyAngle) ? legacyAngle
+      : landscape ? (screen.orientation?.type === 'landscape-secondary' ? 270 : 90)
+        : screenAngle === 180 ? 180 : 0;
   if (angle === 90) return { pitch: event.gamma, roll: -event.beta };
   if (angle === 180 || angle === -180) return { pitch: -event.beta, roll: -event.gamma };
   if (angle === 270 || angle === -90) return { pitch: -event.gamma, roll: event.beta };
   return { pitch: event.beta, roll: event.gamma };
+}
+function handleScreenOrientationChange() {
+  tiltBaseline = null;
+  deviceTilt = { pitch: 0, roll: 0 };
+  cockpitRenderer?.setDeviceTilt(deviceTilt);
 }
 function handleDeviceOrientation(event) {
   latestTilt = orientationAxes(event);
