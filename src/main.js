@@ -24,6 +24,8 @@ let activeProviderName = providerName;
 let hasLiveData = false; let lastLiveError = null;
 let language = localStorage.getItem('fct-language') || (navigator.language.startsWith('zh') ? 'zh-TW' : 'en');
 let filter = 'all'; let aircraft = []; let selected = null; let cockpitRenderer = null; let deferredInstallPrompt = null;
+let tiltPermissionGranted = false; let tiltListening = false; let tiltBaseline = null; let latestTilt = null;
+let deviceTilt = { pitch: 0, roll: 0 };
 let searchLocation = { key: 'taiwan', latitude: 23.7, longitude: 121, distanceNm: 250 };
 let mapView = null;
 const app = document.querySelector('#app');
@@ -48,7 +50,7 @@ function renderShell() {
         <button type="submit">${t.load}</button>
       </form></div><aside id="panel" class="panel"></aside></section>
     </main>
-    <section id="cockpit" class="cockpit hidden" aria-label="${t.simulated}"><h1 class="cockpit-title">${t.simulated}</h1><div id="cockpit-scene"></div><div id="hud" class="hud"></div><button id="return" class="action return">← ${t.return}</button></section>`;
+    <section id="cockpit" class="cockpit hidden" aria-label="${t.simulated}"><h1 class="cockpit-title">${t.simulated}</h1><div id="cockpit-scene"></div><div id="hud" class="hud"></div><div class="tilt-controls"><button id="enable-tilt" type="button">${t.enableTilt}</button><button id="center-view" type="button" hidden>${t.centerView}</button><span id="tilt-status" aria-live="polite"></span></div><button id="return" class="action return">← ${t.return}</button></section>`;
   document.querySelector('#language').value = language;
   document.querySelector('#language').addEventListener('change', (event) => { language = event.target.value; localStorage.setItem('fct-language', language); closeCockpit(); mapView = map.getView(); map.destroy(); renderShell(); initialize(); });
   document.querySelectorAll('[data-filter]').forEach((button) => { button.classList.toggle('active', button.dataset.filter === filter); button.addEventListener('click', () => { filter = button.dataset.filter; renderAircraft(); }); });
@@ -60,6 +62,8 @@ function renderShell() {
   ['#latitude', '#longitude'].forEach((selector) => document.querySelector(selector).addEventListener('input', () => { locationSelect.value = 'custom'; }));
   document.querySelector('#location-picker').addEventListener('submit', changeLocation);
   document.querySelector('#return').addEventListener('click', closeCockpit);
+  document.querySelector('#enable-tilt').addEventListener('click', enableDeviceTilt);
+  document.querySelector('#center-view').addEventListener('click', centerDeviceTilt);
   const install = document.querySelector('#install');
   if (deferredInstallPrompt) install.hidden = false;
   install.addEventListener('click', async () => { if (deferredInstallPrompt) { deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt = null; install.hidden = true; } });
@@ -120,13 +124,79 @@ function openCockpit() {
   document.querySelector('#cockpit').classList.remove('hidden');
   map.pause();
   cockpitRenderer = createCockpitRenderer(document.querySelector('#cockpit-scene'), renderCockpitHud);
+  if (tiltPermissionGranted) {
+    startTiltListening();
+    document.querySelector('#enable-tilt').textContent = strings[language].tiltEnabled;
+    document.querySelector('#enable-tilt').disabled = true;
+    document.querySelector('#center-view').hidden = false;
+    document.querySelector('#tilt-status').textContent = strings[language].tiltHint;
+  }
   updateCockpit();
 }
 function closeCockpit() {
   const cockpit = document.querySelector('#cockpit');
   const wasOpen = cockpit && !cockpit.classList.contains('hidden');
-  cockpit?.classList.add('hidden'); cockpitRenderer?.destroy(); cockpitRenderer = null; map?.resume();
+  cockpit?.classList.add('hidden'); stopTiltListening(); cockpitRenderer?.destroy(); cockpitRenderer = null; map?.resume();
   if (wasOpen) { infoPanelOpen = false; renderPanel(); }
+}
+async function enableDeviceTilt() {
+  const status = document.querySelector('#tilt-status');
+  const t = strings[language];
+  if (!window.isSecureContext || !('DeviceOrientationEvent' in window)) {
+    status.textContent = t.tiltUnavailable;
+    return;
+  }
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === 'function' && !tiltPermissionGranted) {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== 'granted') { status.textContent = t.tiltDenied; return; }
+    }
+    tiltPermissionGranted = true;
+    startTiltListening();
+    document.querySelector('#enable-tilt').textContent = t.tiltEnabled;
+    document.querySelector('#enable-tilt').disabled = true;
+    document.querySelector('#center-view').hidden = false;
+    status.textContent = t.tiltHint;
+  } catch {
+    status.textContent = t.tiltDenied;
+  }
+}
+function startTiltListening() {
+  if (tiltListening) return;
+  window.addEventListener('deviceorientation', handleDeviceOrientation);
+  tiltListening = true;
+}
+function stopTiltListening() {
+  if (tiltListening) window.removeEventListener('deviceorientation', handleDeviceOrientation);
+  tiltListening = false;
+  tiltBaseline = null;
+  latestTilt = null;
+  deviceTilt = { pitch: 0, roll: 0 };
+}
+function orientationAxes(event) {
+  if (!Number.isFinite(event.beta) || !Number.isFinite(event.gamma)) return null;
+  const angle = Number(screen.orientation?.angle ?? window.orientation ?? 0);
+  if (angle === 90) return { pitch: event.gamma, roll: -event.beta };
+  if (angle === 180 || angle === -180) return { pitch: -event.beta, roll: -event.gamma };
+  if (angle === 270 || angle === -90) return { pitch: -event.gamma, roll: event.beta };
+  return { pitch: event.beta, roll: event.gamma };
+}
+function handleDeviceOrientation(event) {
+  latestTilt = orientationAxes(event);
+  if (!latestTilt) return;
+  tiltBaseline ||= { ...latestTilt };
+  const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+  deviceTilt = {
+    pitch: clamp(latestTilt.pitch - tiltBaseline.pitch, 25),
+    roll: clamp(latestTilt.roll - tiltBaseline.roll, 30)
+  };
+  cockpitRenderer?.setDeviceTilt(deviceTilt);
+}
+function centerDeviceTilt() {
+  if (latestTilt) tiltBaseline = { ...latestTilt };
+  deviceTilt = { pitch: 0, roll: 0 };
+  cockpitRenderer?.setDeviceTilt(deviceTilt);
+  document.querySelector('#tilt-status').textContent = strings[language].tiltHint;
 }
 function updateCockpit() {
   if (!cockpitRenderer || !selected) return;
@@ -149,12 +219,14 @@ function renderCockpitHud(displayed) {
     const label = heading === 0 ? 'N' : heading === 90 ? 'E' : heading === 180 ? 'S' : heading === 270 ? 'W' : String(heading / 10).padStart(2, '0');
     return `<g transform="translate(${index * 70} 0)"><line y2="12"/><text y="32" text-anchor="middle">${label}</text></g>`;
   }).join('');
-  const pitchOffset = Math.max(-70, Math.min(70, pitch * 10));
+  const pitchOffset = Math.max(-70, Math.min(70, pitch * 10 + deviceTilt.pitch * 4));
+  const markerX = 500 + deviceTilt.roll * 4;
+  const markerY = 300 + deviceTilt.pitch * 4;
   document.querySelector('#hud').innerHTML = `
     <svg class="hud-svg" viewBox="0 0 1000 600" role="img" aria-label="${t.simulated}">
       <g class="hud-glow">
         <text class="hud-mode" x="500" y="30" text-anchor="middle">SIMULATED COCKPIT VIEW · ${displayed.callsign || displayed.id}</text>
-        <g class="bank-scale" transform="translate(500 80)">
+        <g class="bank-scale" transform="translate(500 80) rotate(${deviceTilt.roll})">
           <path d="M-125 25 A128 128 0 0 1 125 25"/>
           <line x1="-112" y1="-8" x2="-101" y2="1"/><line x1="-82" y1="-35" x2="-73" y2="-23"/><line x1="-43" y1="-51" x2="-38" y2="-36"/>
           <line x1="0" y1="-58" x2="0" y2="-40"/><line x1="43" y1="-51" x2="38" y2="-36"/><line x1="82" y1="-35" x2="73" y2="-23"/><line x1="112" y1="-8" x2="101" y2="1"/>
@@ -163,14 +235,14 @@ function renderCockpitHud(displayed) {
         <g class="heading-scale" transform="translate(360 105)">${headingTicks}<path class="heading-caret" d="M131 45 L140 57 L149 45"/></g>
         <g class="speed-scale" transform="translate(115 190)"><text class="tape-title" x="0" y="-24">GS KT</text>${speedTicks}<path class="tape-box" d="M-20 77 H78 V106 H-20 L-34 92 Z"/><text class="tape-value" x="28" y="99" text-anchor="middle">${fmt(speedKt)}</text></g>
         <g class="altitude-scale" transform="translate(825 190)"><text class="tape-title" x="40" y="-24" text-anchor="end">ALT FT</text>${altitudeTicks}<path class="tape-box" d="M-38 77 H60 L74 92 L60 106 H-38 Z"/><text class="tape-value" x="12" y="99" text-anchor="middle">${fmt(altitudeFt)}</text></g>
-        <g class="pitch-ladder-svg" transform="translate(500 ${300 + pitchOffset})">
+        <g class="pitch-ladder-svg" transform="translate(500 ${300 + pitchOffset}) rotate(${deviceTilt.roll})">
           <g transform="translate(0 -85)"><text x="-128" y="5">+10</text><line x1="-95" x2="-28"/><line x1="28" x2="95"/><text x="108" y="5">+10</text></g>
           <g transform="translate(0 -43)"><text x="-120" y="5">+5</text><line x1="-82" x2="-28"/><line x1="28" x2="82"/><text x="103" y="5">+5</text></g>
           <g class="horizon"><line x1="-260" x2="-55"/><line x1="55" x2="260"/><circle r="5"/></g>
           <g transform="translate(0 43)"><text x="-116" y="5">−5</text><line class="dash" x1="-82" x2="-28"/><line class="dash" x1="28" x2="82"/><text x="103" y="5">−5</text></g>
           <g transform="translate(0 85)"><text x="-124" y="5">−10</text><line class="dash" x1="-95" x2="-28"/><line class="dash" x1="28" x2="95"/><text x="108" y="5">−10</text></g>
         </g>
-        <g class="flight-path-marker" transform="translate(500 300)"><circle r="13"/><line x1="-58" x2="-13"/><line x1="13" x2="58"/><line x1="-58" y1="0" x2="-58" y2="15"/><line x1="58" y1="0" x2="58" y2="15"/><line y1="-22" y2="-13"/></g>
+        <g class="flight-path-marker" transform="translate(${markerX} ${markerY})"><circle r="13"/><line x1="-58" x2="-13"/><line x1="13" x2="58"/><line x1="-58" y1="0" x2="-58" y2="15"/><line x1="58" y1="0" x2="58" y2="15"/><line y1="-22" y2="-13"/></g>
         <text class="vertical-rate-text" x="865" y="430" text-anchor="middle">V/S ${verticalFpm >= 0 ? '+' : '−'}${fmt(Math.abs(verticalFpm))} FPM</text>
         <g class="nav-arc" transform="translate(500 570)"><path d="M-110 15 A112 112 0 0 1 110 15"/><line x1="-94" y1="-43" x2="-82" y2="-35"/><line x1="-55" y1="-80" x2="-47" y2="-67"/><line y1="-94" y2="-77"/><line x1="55" y1="-80" x2="47" y2="-67"/><line x1="94" y1="-43" x2="82" y2="-35"/><path d="M-8 -70 L0 -84 L8 -70"/><text x="0" y="-44" text-anchor="middle">TRK ${fmt(track)}°</text></g>
         <text class="hud-age" x="25" y="575">DATA ${fmt(dataAgeSeconds(displayed))}s · ${displayed.source}</text>

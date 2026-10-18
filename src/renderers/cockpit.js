@@ -53,6 +53,7 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
 
   let frame; let aircraft; let origin; let previousTime = performance.now();
   let reportReceivedAt = performance.now(); let lastHudUpdate = 0;
+  let targetDevicePitch = 0; let targetDeviceRoll = 0; let devicePitch = 0; let deviceRoll = 0;
   const smoothedPosition = new THREE.Vector3();
   const desiredPosition = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
@@ -67,6 +68,9 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
     frame = requestAnimationFrame(animate); resize();
     const deltaSeconds = Math.min(0.1, Math.max(0.001, (time - previousTime) / 1000));
     previousTime = time;
+    const controlSmoothing = 1 - Math.exp(-deltaSeconds * 6);
+    devicePitch += (targetDevicePitch - devicePitch) * controlSmoothing;
+    deviceRoll += (targetDeviceRoll - deviceRoll) * controlSmoothing;
     if (aircraft) {
       const extrapolationSeconds = Math.min(12, Math.max(0, (time - reportReceivedAt) / 1000));
       const displayAircraft = {
@@ -102,6 +106,8 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
           smoothedPosition.z - Math.cos(trackRad) * lookDistance
         );
         camera.lookAt(lookTarget);
+        camera.rotateX(THREE.MathUtils.degToRad(devicePitch));
+        camera.rotateZ(THREE.MathUtils.degToRad(deviceRoll));
         if (simulatedRunway.visible) {
           camera.getWorldDirection(viewDirection);
           viewDirection.y = 0;
@@ -120,5 +126,9 @@ export function createCockpitRenderer(container, onDisplayUpdate = () => {}) {
     renderer.render(scene, camera);
   }
   animate(performance.now());
-  return { update(next) { aircraft = next; reportReceivedAt = performance.now(); }, destroy() { cancelAnimationFrame(frame); renderer.dispose(); terrainGeometry.dispose(); container.replaceChildren(); } };
+  return {
+    update(next) { aircraft = next; reportReceivedAt = performance.now(); },
+    setDeviceTilt({ pitch = 0, roll = 0 } = {}) { targetDevicePitch = pitch; targetDeviceRoll = roll; },
+    destroy() { cancelAnimationFrame(frame); renderer.dispose(); terrainGeometry.dispose(); container.replaceChildren(); }
+  };
 }

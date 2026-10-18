@@ -58,10 +58,15 @@ button, select, input { font: inherit; }
 .hud-warning { position: absolute; right: 18px; bottom: 18px; padding: 5px 8px !important; border: 1px solid currentColor !important; font-size: 11px; letter-spacing: .05em; opacity: .82; }
 .cockpit-title { top: auto; bottom: 18px; left: 50%; padding: 4px 8px; background: rgba(2,13,21,.62); font-size: 11px; opacity: 0; }
 .return { left: 18px; bottom: max(18px, env(safe-area-inset-bottom)); width: auto; padding: 8px 12px; background: rgba(4,26,21,.82); color: #9effbc; border-color: #68db91; font-weight: 600; }
+.tilt-controls { position: absolute; z-index: 4; top: max(14px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right)); display: flex; align-items: center; gap: 7px; }
+.tilt-controls button { padding: 7px 10px; border: 1px solid #68db91; border-radius: 7px; background: rgba(4,26,21,.82); color: #9effbc; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.tilt-controls button[hidden] { display: none; }
+.tilt-controls span { position: absolute; top: 100%; right: 0; margin-top: 4px; max-width: min(300px, 70vw); color: #cffff9; font: 11px/1.3 "Consolas", "SFMono-Regular", monospace; text-align: right; text-shadow: 0 0 5px #001; }
 @media (max-width: 760px) {
   .heading-tape { width: 56vw; }.hud-identity { top: 12px; left: 12px; }.hud-identity strong { font-size: 15px; }.hud-identity span { display: none; }
   .speed-tape,.altitude-tape { width: 76px; min-height: 76px; }.speed-tape { left: 12px; }.altitude-tape { right: 12px; }.speed-tape strong,.altitude-tape strong { font-size: 21px; }
   .pitch-ladder { width: 50vw; }.pitch.horizon-line { width: 210px; }.vertical-readout { right: 0; width: 100px; }.hud-warning { display: none; }.track-readout { bottom: 48px; }
+  .tilt-controls { top: max(58px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); }.tilt-controls button { padding: 6px 8px; font-size: 11px; }
 }
 /* Reference-inspired collimated HUD */
 .hud-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; color: #16ffb0; filter: drop-shadow(0 0 3px rgba(0,255,171,.8)); }
