@@ -186,8 +186,10 @@ function handleDeviceOrientation(event) {
   if (!latestTilt) return;
   tiltBaseline ||= { ...latestTilt };
   const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+  const pitchDelta = latestTilt.pitch - tiltBaseline.pitch;
+  const pitchInput = Math.sign(pitchDelta) * Math.max(0, Math.abs(pitchDelta) - 1) * 2.5;
   deviceTilt = {
-    pitch: clamp(latestTilt.pitch - tiltBaseline.pitch, 25),
+    pitch: clamp(pitchInput, 25),
     roll: clamp(latestTilt.roll - tiltBaseline.roll, 30)
   };
   cockpitRenderer?.setDeviceTilt(deviceTilt);
