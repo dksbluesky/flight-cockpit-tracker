@@ -12,8 +12,10 @@ const allowedOrigins = new Set([
   ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean)
 ]);
 const freshForMs = 30000;
+const metarFreshForMs = 300000;
 const staleForMs = 300000;
 const caches = new Map();
+const metarCaches = new Map();
 const inFlight = new Map();
 let rateLimitedUntil = 0;
 let rateLimitBackoffMs = 60000;
@@ -24,6 +26,25 @@ function retryAfterMs(header) {
   if (Number.isFinite(seconds)) return Math.max(1000, seconds * 1000);
   const date = Date.parse(header);
   return Number.isFinite(date) ? Math.max(1000, date - Date.now()) : 60000;
+}
+
+async function metarResponse(icao) {
+  const cache = metarCaches.get(icao);
+  if (cache && Date.now() - cache.savedAt < metarFreshForMs) return { ...cache, cacheState: 'cached' };
+  const url = new URL('https://aviationweather.gov/api/data/metar');
+  url.searchParams.set('ids', icao);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('hours', '2');
+  const upstream = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'flight-cockpit-tracker/0.2 (+https://github.com/dksbluesky/flight-cockpit-tracker)' } });
+  if (upstream.status === 204) {
+    const result = { body: '[]', contentType: 'application/json', savedAt: Date.now() };
+    metarCaches.set(icao, result);
+    return { ...result, cacheState: 'live' };
+  }
+  if (!upstream.ok) throw new Error(`Aviation Weather Center returned ${upstream.status}`);
+  const result = { body: await upstream.text(), contentType: upstream.headers.get('content-type') || 'application/json', savedAt: Date.now() };
+  metarCaches.set(icao, result);
+  return { ...result, cacheState: 'live' };
 }
 
 async function aircraftResponse(latitude, longitude, distanceNm) {
@@ -91,6 +112,22 @@ const server = http.createServer(async (request, response) => {
   if (pathname === '/health') {
     response.writeHead(200, { 'content-type': 'application/json' });
     return response.end(JSON.stringify({ ok: true }));
+  }
+  if (request.method === 'GET' && pathname === '/api/metar') {
+    if (origin && !allowedOrigins.has(origin)) { response.writeHead(403); return response.end('Origin not allowed'); }
+    const icao = (requestUrl.searchParams.get('icao') || '').trim().toUpperCase();
+    if (!/^[A-Z]{4}$/.test(icao)) {
+      response.writeHead(400, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ error: 'Invalid ICAO station code' }));
+    }
+    try {
+      const result = await metarResponse(icao);
+      response.writeHead(200, { 'content-type': result.contentType, 'x-metar-cache': result.cacheState });
+      return response.end(result.body);
+    } catch (error) {
+      response.writeHead(502, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ error: error.message }));
+    }
   }
   if (request.method !== 'GET' || pathname !== '/api/aircraft') { response.writeHead(404); return response.end('Not found'); }
   if (origin && !allowedOrigins.has(origin)) { response.writeHead(403); return response.end('Origin not allowed'); }

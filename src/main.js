@@ -5,11 +5,14 @@ import { createLiveProvider } from './providers/live.js';
 import { createTrackingMap } from './renderers/map.js';
 import { createCockpitRenderer } from './renderers/cockpit.js';
 import { dataAgeSeconds, isStale } from './domain/aircraft.js';
+import { ilsDeviation } from './domain/ils.js';
+import { runwayEnds, runwayAirports } from './data/runways.js';
 
 const providerName = import.meta.env.VITE_AIRCRAFT_PROVIDER === 'mock' ? 'mock' : 'live';
 const mockProvider = createMockProvider();
 const defaultLiveApiUrl = import.meta.env.PROD ? 'https://flight-cockpit-proxy.onrender.com/api/aircraft' : 'http://127.0.0.1:8787/api/aircraft';
 const liveProvider = createLiveProvider(import.meta.env.VITE_LIVE_API_URL || defaultLiveApiUrl);
+const metarApiUrl = import.meta.env.VITE_METAR_API_URL || (import.meta.env.PROD ? 'https://flight-cockpit-proxy.onrender.com/api/metar' : 'http://127.0.0.1:8787/api/metar');
 const locations = [
   ['taiwan', 'Taiwan · 台灣', 23.7, 121],
   ['vhhh', 'VHHH · 香港 Hong Kong', 22.308, 113.9185],
@@ -27,6 +30,10 @@ let filter = 'all'; let aircraft = []; let selected = null; let cockpitRenderer 
 let tiltPermissionGranted = false; let tiltListening = false; let tiltBaseline = null; let latestTilt = null;
 let deviceTilt = { pitch: 0, roll: 0 };
 let searchLocation = { key: 'taiwan', latitude: 23.7, longitude: 121, distanceNm: 250 };
+let metarWind = null;
+let metarRequestId = 0;
+let arrivalAirport = 'RCTP';
+let selectedRunway = runwayEnds.find((runway) => runway.airport === arrivalAirport && runway.runway === '05L');
 let mapView = null;
 const app = document.querySelector('#app');
 let infoPanelOpen = true;
@@ -50,7 +57,7 @@ function renderShell() {
         <button type="submit">${t.load}</button>
       </form></div><aside id="panel" class="panel"></aside></section>
     </main>
-    <section id="cockpit" class="cockpit hidden" aria-label="${t.simulated}"><h1 class="cockpit-title">${t.simulated}</h1><div id="cockpit-scene"></div><div id="hud" class="hud"></div><div class="tilt-controls"><button id="enable-tilt" type="button">${t.enableTilt}</button><button id="center-view" type="button" hidden>${t.centerView}</button><span id="tilt-status" aria-live="polite"></span></div><button id="return" class="action return">← ${t.return}</button></section>`;
+    <section id="cockpit" class="cockpit hidden" aria-label="${t.simulated}"><h1 class="cockpit-title">${t.simulated}</h1><div id="cockpit-scene"></div><div id="hud" class="hud"></div><div class="arrival-controls"><label for="arrival-airport">${t.arrival}</label><select id="arrival-airport">${runwayAirports.map((airport) => `<option value="${airport}" ${airport === arrivalAirport ? 'selected' : ''}>${airport}</option>`).join('')}</select><label for="arrival-runway">${t.ilsRunway}</label><select id="arrival-runway"></select></div><div class="tilt-controls"><button id="enable-tilt" type="button">${t.enableTilt}</button><button id="center-view" type="button" hidden>${t.centerView}</button><span id="tilt-status" aria-live="polite"></span></div><button id="return" class="action return">← ${t.return}</button></section>`;
   document.querySelector('#language').value = language;
   document.querySelector('#language').addEventListener('change', (event) => { language = event.target.value; localStorage.setItem('fct-language', language); closeCockpit(); mapView = map.getView(); map.destroy(); renderShell(); initialize(); });
   document.querySelectorAll('[data-filter]').forEach((button) => { button.classList.toggle('active', button.dataset.filter === filter); button.addEventListener('click', () => { filter = button.dataset.filter; renderAircraft(); }); });
@@ -62,6 +69,24 @@ function renderShell() {
   ['#latitude', '#longitude'].forEach((selector) => document.querySelector(selector).addEventListener('input', () => { locationSelect.value = 'custom'; }));
   document.querySelector('#location-picker').addEventListener('submit', changeLocation);
   document.querySelector('#return').addEventListener('click', closeCockpit);
+  const arrivalSelect = document.querySelector('#arrival-airport');
+  const runwaySelect = document.querySelector('#arrival-runway');
+  const updateRunwayChoices = (preferredRunway) => {
+    const previousAirport = arrivalAirport;
+    arrivalAirport = arrivalSelect.value;
+    const choices = runwayEnds.filter((runway) => runway.airport === arrivalAirport);
+    runwaySelect.innerHTML = choices.map((runway) => `<option value="${runway.runway}">${runway.runway}</option>`).join('');
+    selectedRunway = choices.find((runway) => runway.runway === preferredRunway) || choices[0] || null;
+    if (selectedRunway) runwaySelect.value = selectedRunway.runway;
+    if (arrivalAirport !== previousAirport) { metarWind = null; refreshMetar(arrivalAirport); }
+    if (cockpitRenderer && selected) renderCockpitHud(selected);
+  };
+  updateRunwayChoices(selectedRunway?.runway);
+  arrivalSelect.addEventListener('change', () => updateRunwayChoices());
+  runwaySelect.addEventListener('change', () => {
+    selectedRunway = runwayEnds.find((runway) => runway.airport === arrivalAirport && runway.runway === runwaySelect.value) || null;
+    if (cockpitRenderer && selected) renderCockpitHud(selected);
+  });
   document.querySelector('#enable-tilt').addEventListener('click', enableDeviceTilt);
   document.querySelector('#center-view').addEventListener('click', centerDeviceTilt);
   const install = document.querySelector('#install');
@@ -75,7 +100,8 @@ async function changeLocation(event) {
   const latitude = Number(document.querySelector('#latitude').value);
   const longitude = Number(document.querySelector('#longitude').value);
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
-  searchLocation = { key: document.querySelector('#location').value, latitude, longitude, distanceNm: 250 };
+  const locationKey = document.querySelector('#location').value;
+  searchLocation = { key: locationKey, latitude, longitude, distanceNm: 250 };
   selected = null; aircraft = []; map.setSelected(null); renderAircraft(); renderPanel(); map.goTo(longitude, latitude);
   await refresh();
 }
@@ -223,6 +249,35 @@ function updateCockpit() {
   cockpitRenderer.update(selected);
   renderCockpitHud(selected);
 }
+async function refreshMetar(station = arrivalAirport) {
+  const requestId = ++metarRequestId;
+  if (!station) { metarWind = null; if (selected) renderCockpitHud(selected); return; }
+  try {
+    const url = new URL(metarApiUrl);
+    url.searchParams.set('icao', station);
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error(`METAR request failed (${response.status})`);
+    const records = await response.json();
+    if (requestId !== metarRequestId) return;
+    const record = Array.isArray(records) ? records[0] : null;
+    if (!record) throw new Error('No recent METAR available');
+    const numeric = (field) => field === null || field === undefined || field === '' ? null : Number(field);
+    const direction = numeric(record.wdir);
+    const speed = numeric(record.wspd);
+    metarWind = {
+      station,
+      direction: Number.isFinite(direction) ? direction : null,
+      variable: String(record.wdir).toUpperCase() === 'VRB' || /\bVRB\d{2,3}KT\b/.test(record.rawOb || ''),
+      speed: Number.isFinite(speed) ? speed : null,
+      gust: Number.isFinite(record.wgst) ? record.wgst : null,
+      observationTime: record.obsTime || null
+    };
+  } catch {
+    if (requestId !== metarRequestId) return;
+    metarWind = { station, unavailable: true };
+  }
+  if (selected) renderCockpitHud(selected);
+}
 function renderCockpitHud(displayed) {
   if (!displayed || !cockpitRenderer) return;
   const t = strings[language];
@@ -232,6 +287,10 @@ function renderCockpitHud(displayed) {
   const track = ((displayed.track || 0) + 360) % 360;
   const pitch = Math.atan2(displayed.verticalRateMps || 0, Math.max(1, displayed.groundSpeedMps || 0)) * 180 / Math.PI;
   const fmt = (number) => Number.isFinite(number) ? Math.round(number).toLocaleString('en-US') : '---';
+  const windDirection = metarWind?.variable ? 'VRB' : Number.isFinite(metarWind?.direction) ? `${String(Math.round(metarWind.direction) % 360).padStart(3, '0')}°` : '---';
+  const windSpeed = Number.isFinite(metarWind?.speed) ? `${fmt(metarWind.speed)}${Number.isFinite(metarWind.gust) ? `G${fmt(metarWind.gust)}` : ''} KT` : '--- KT';
+  const showIlsCues = altitudeFt < 2000;
+  const approach = showIlsCues && !isStale(displayed) && selectedRunway ? ilsDeviation(displayed, selectedRunway) : null;
   const speedTicks = [-40, -20, 0, 20, 40].map((offset, index) => `<g transform="translate(0 ${index * 45})"><line x1="0" x2="18"/><text x="25" y="6">${fmt(speedKt + offset)}</text></g>`).join('');
   const altitudeTicks = [400, 200, 0, -200, -400].map((offset, index) => `<g transform="translate(0 ${index * 45})"><line x1="22" x2="40"/><text x="15" y="6" text-anchor="end">${fmt(altitudeFt + offset)}</text></g>`).join('');
   const headingTicks = [-20, -10, 0, 10, 20].map((offset, index) => {
@@ -246,6 +305,7 @@ function renderCockpitHud(displayed) {
     <svg class="hud-svg" viewBox="0 0 1000 600" role="img" aria-label="${t.simulated}">
       <g class="hud-glow">
         <text class="hud-mode" x="500" y="30" text-anchor="middle">SIMULATED COCKPIT VIEW · ${displayed.callsign || displayed.id}</text>
+        <text class="wind-readout" x="25" y="45">WIND ${metarWind?.station || '—'} · ${windDirection} / ${windSpeed}</text>
         <g class="bank-scale" transform="translate(500 80) rotate(${deviceTilt.roll})">
           <path d="M-125 25 A128 128 0 0 1 125 25"/>
           <line x1="-112" y1="-8" x2="-101" y2="1"/><line x1="-82" y1="-35" x2="-73" y2="-23"/><line x1="-43" y1="-51" x2="-38" y2="-36"/>
@@ -263,6 +323,16 @@ function renderCockpitHud(displayed) {
           <g transform="translate(0 85)"><text x="-124" y="5">−10</text><line class="dash" x1="-95" x2="-28"/><line class="dash" x1="28" x2="95"/><text x="108" y="5">−10</text></g>
         </g>
         <g class="flight-path-marker" transform="translate(${markerX} ${markerY})"><circle r="13"/><line x1="-58" x2="-13"/><line x1="13" x2="58"/><line x1="-58" y1="0" x2="-58" y2="15"/><line x1="58" y1="0" x2="58" y2="15"/><line y1="-22" y2="-13"/></g>
+        ${showIlsCues ? `
+          <g class="ils-glideslope" transform="translate(245 325)">
+            <text x="0" y="-75" text-anchor="middle">G/S</text><line y1="-58" y2="58"/><line x1="-8" x2="8" y1="-58"/><line x1="-8" x2="8" y1="58"/><line x1="-5" x2="5"/>
+            ${approach ? `<g class="ils-glideslope-marker" transform="translate(0 ${Math.max(-50, Math.min(50, approach.glideslopeOffsetPx - deviceTilt.pitch * 2))})"><path d="M-7 0 L0 -7 L7 0 L0 7 Z"/></g>` : ''}
+          </g>
+          <g class="ils-localizer" transform="translate(500 520)">
+            <text x="0" y="-24" text-anchor="middle">LOC</text><line x1="-58" x2="58"/><line y1="-8" y2="8"/><line x1="-58" x2="-58" y1="-8" y2="8"/><line x1="58" x2="58" y1="-8" y2="8"/>
+            ${approach ? `<g class="ils-localizer-marker" transform="translate(${Math.max(-50, Math.min(50, approach.localizerOffsetPx - deviceTilt.roll * 2))} 0)"><path d="M0 -7 L7 0 L0 7 L-7 0 Z"/></g>` : ''}
+          </g>
+          <text class="ils-runway-label" x="500" y="485" text-anchor="middle">ILS SIM · ${selectedRunway ? `${selectedRunway.airport} ${selectedRunway.runway} · ${approach ? `${fmt(approach.distanceNm)} NM` : 'NO APPROACH DATA'}` : 'NO RUNWAY SELECTED'}</text>` : ''}
         <text class="vertical-rate-text" x="865" y="430" text-anchor="middle">V/S ${verticalFpm >= 0 ? '+' : '−'}${fmt(Math.abs(verticalFpm))} FPM</text>
         <g class="nav-arc" transform="translate(500 570)"><path d="M-110 15 A112 112 0 0 1 110 15"/><line x1="-94" y1="-43" x2="-82" y2="-35"/><line x1="-55" y1="-80" x2="-47" y2="-67"/><line y1="-94" y2="-77"/><line x1="55" y1="-80" x2="47" y2="-67"/><line x1="94" y1="-43" x2="82" y2="-35"/><path d="M-8 -70 L0 -84 L8 -70"/><text x="0" y="-44" text-anchor="middle">TRK ${fmt(track)}°</text></g>
         <text class="hud-age" x="25" y="575">DATA ${fmt(dataAgeSeconds(displayed))}s · ${displayed.source}</text>
@@ -293,7 +363,7 @@ async function refresh() {
 
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt = event; const install = document.querySelector('#install'); if (install) install.hidden = false; });
 window.addEventListener('online', refresh); window.addEventListener('offline', refresh);
-renderShell(); initialize(); refresh(); setInterval(refresh, 30000);
+renderShell(); initialize(); refresh(); refreshMetar(); setInterval(refresh, 30000); setInterval(() => refreshMetar(), 300000);
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     if (import.meta.env.PROD) {

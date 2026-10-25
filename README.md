@@ -36,6 +36,12 @@ The production build is configured for `https://dksbluesky.github.io/flight-cock
 
 The live adapter uses the public `adsb.fi` v3 API, queried within 250 nautical miles of central Taiwan. Its public endpoint permits personal, non-commercial use, limits requests to one per second, and requires visible attribution with a link. The browser cannot call the endpoint directly because the verified response did not include an `Access-Control-Allow-Origin` header, so `server/proxy.js` performs the request. Production uses the HTTPS Render service at `https://flight-cockpit-proxy.onrender.com`; local development uses `http://127.0.0.1:8787`. The public endpoint returned data without a token during verification on 2026-10-25.
 
+HUD wind uses the selected arrival airport's METAR from the official AviationWeather.gov API, fetched through the proxy because the API does not allow browser CORS requests. Taiwan defaults to RCTP. METAR is cached for five minutes; selecting another arrival airport also changes the wind station.
+
+Below 2,000 ft and within 10 NM of the threshold, the cockpit can show simulated localizer and 3-degree glideslope cues for a selected airport/runway. Needle position uses ADS-B coordinates and altitude relative to the runway threshold, with device tilt acting as a simulated control input. Runway threshold coordinates and true headings come from the public OurAirports dataset; this is a simplified visual aid, not certified ILS guidance, and ADS-B/airport data may be incomplete or stale.
+
+Official references: [AviationWeather.gov Data API](https://aviationweather.gov/data/api/), [OurAirports public data](https://ourairports.com/data/).
+
 Verified provider facts on 2026-10-25:
 
 - The public v3 radius endpoint returns aircraft within up to 250 nautical miles and uses an `ac` aircraft array.
@@ -59,6 +65,7 @@ Official references:
 - [adsb.fi](https://adsb.fi/)
 - [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)
 - [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
+- [OurAirports runway dataset](https://github.com/davidmegginson/ourairports-data/blob/main/runways.csv)
 ## Classification and safety
 
 “Possible military” is only a conservative callsign-prefix heuristic. It does not confirm operator, mission, aircraft ownership, or military identity. Aircraft without a recognized prefix are not proven civilian; missing callsigns are classified as unknown. Stale data (over 30 seconds since last contact) disables cockpit entry.
