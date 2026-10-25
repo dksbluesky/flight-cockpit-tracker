@@ -371,9 +371,16 @@ window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault
 window.addEventListener('online', refresh); window.addEventListener('offline', refresh);
 renderShell(); initialize(); refresh(); refreshMetar(); setInterval(refresh, 30000); setInterval(() => refreshMetar(), 300000);
 if ('serviceWorker' in navigator) {
+  let reloadingForWorkerUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForWorkerUpdate) return;
+    reloadingForWorkerUpdate = true;
+    window.location.reload();
+  });
   window.addEventListener('load', async () => {
     if (import.meta.env.PROD) {
-      await navigator.serviceWorker.register('./sw.js');
+      const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+      await registration.update();
       return;
     }
     const registrations = await navigator.serviceWorker.getRegistrations();
