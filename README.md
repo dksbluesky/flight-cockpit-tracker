@@ -27,21 +27,21 @@ npm run proxy
 npm run dev
 ```
 
-Open the URL printed by Vite. The status bar shows `Live adsb.lol` and the current aircraft count when the feed is available. If the proxy or live source fails, the app clearly switches to five deterministic sample aircraft.
+Open the URL printed by Vite. The status bar shows the live source and current aircraft count when the feed is available. If the proxy or live source fails, the app clearly switches to five deterministic sample aircraft.
 
 ## Published PWA
 
 The production build is configured for `https://dksbluesky.github.io/flight-cockpit-tracker/` and uses the Render HTTPS proxy. GitHub Actions builds and publishes `dist` after changes reach `main`. The free Render service may sleep while unused, so the first live-data request after inactivity can take longer.
 ## Live data provider
 
-The initial live adapter uses the public `adsb.lol` API, queried within 250 nautical miles of central Taiwan. The browser cannot call the endpoint directly because the verified response did not include a permissive CORS header, so `server/proxy.js` performs the request. Production uses the HTTPS Render service at `https://flight-cockpit-proxy.onrender.com`; local development uses `http://127.0.0.1:8787`. No API token is currently required.
+The live adapter uses the public `adsb.fi` v3 API, queried within 250 nautical miles of central Taiwan. Its public endpoint permits personal, non-commercial use, limits requests to one per second, and requires visible attribution with a link. The browser cannot call the endpoint directly because the verified response did not include an `Access-Control-Allow-Origin` header, so `server/proxy.js` performs the request. Production uses the HTTPS Render service at `https://flight-cockpit-proxy.onrender.com`; local development uses `http://127.0.0.1:8787`. The public endpoint returned data without a token during verification on 2026-10-25.
 
-Verified provider facts on 2026-09-19:
+Verified provider facts on 2026-10-25:
 
-- The API is publicly available and keyless today.
-- Rate limits are dynamic and may change; the app polls every 10 seconds.
-- Public data is offered under the Open Database License (ODbL) 1.0.
-- The provider states that a feeder-linked API key may be required in the future.
+- The public v3 radius endpoint returns aircraft within up to 250 nautical miles and uses an `ac` aircraft array.
+- Public requests are rate limited to 1 request per second; this app polls every 30 seconds and the proxy caches responses.
+- The provider terms allow personal, non-commercial use only and require a visible link attribution.
+- A Taiwan radius request succeeded without an API token. Its response did not include `Access-Control-Allow-Origin`, so browser requests go through the proxy.
 - Coverage and metadata can be incomplete. Publicly visible aircraft are not the same as every aircraft in the airspace.
 
 Optional local overrides use names only in `.env.example`:
@@ -49,14 +49,14 @@ Optional local overrides use names only in `.env.example`:
 ```text
 VITE_AIRCRAFT_PROVIDER=mock
 VITE_LIVE_API_URL=http://127.0.0.1:8787/api/aircraft
-ADSB_LOL_URL=https://api.adsb.lol/v2/lat/23.7/lon/121/dist/250
+ADSB_API_URL=https://opendata.adsb.fi/api/v3
 PORT=8787
 ```
 
 Official references:
 
-- [adsb.lol API documentation](https://api.adsb.lol/docs)
-- [adsb.lol official API repository](https://github.com/adsblol/api)
+- [adsb.fi open data API documentation and terms](https://github.com/adsbfi/opendata/blob/main/README.md)
+- [adsb.fi](https://adsb.fi/)
 - [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)
 - [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 ## Classification and safety
@@ -84,4 +84,4 @@ The PWA shell works offline after a successful online load. Live aircraft data c
 
 ## Attribution
 
-Map data © OpenStreetMap contributors. Live aircraft data © adsb.lol contributors, available under ODbL 1.0.
+Map data © OpenStreetMap contributors. Live aircraft data are provided by [adsb.fi](https://adsb.fi/) under its personal, non-commercial API terms.

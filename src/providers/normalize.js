@@ -36,7 +36,7 @@ const feetToMeters = (feet) => Number.isFinite(feet) ? feet * 0.3048 : null;
 const knotsToMetersPerSecond = (knots) => Number.isFinite(knots) ? knots * 0.514444 : null;
 const feetPerMinuteToMetersPerSecond = (rate) => Number.isFinite(rate) ? rate * 0.00508 : null;
 
-export function normalizeAdsbLolAircraft(state, nowMs = Date.now()) {
+function normalizeAdsbAircraft(state, nowMs, source) {
   const altitudeFeet = Number.isFinite(state.alt_geom) ? state.alt_geom : Number.isFinite(state.alt_baro) ? state.alt_baro : null;
   const verticalRate = Number.isFinite(state.geom_rate) ? state.geom_rate : state.baro_rate;
   const aircraft = {
@@ -55,15 +55,20 @@ export function normalizeAdsbLolAircraft(state, nowMs = Date.now()) {
     verticalRateMps: feetPerMinuteToMetersPerSecond(verticalRate),
     registration: clean(state.r),
     aircraftType: clean(state.t),
-    source: 'adsb.lol',
+    source,
     receivedAt: nowMs
   };
   aircraft.classification = classifyAircraft(aircraft);
   return aircraft;
 }
 
-export function normalizeAdsbLolResponse(payload, nowMs = Date.now()) {
-  if (!payload || !Array.isArray(payload.ac)) throw new TypeError('Invalid adsb.lol aircraft response');
-  return payload.ac.map((state) => normalizeAdsbLolAircraft(state, nowMs))
+function normalizeAdsbResponse(payload, nowMs, source) {
+  if (!payload || !Array.isArray(payload.ac)) throw new TypeError(`Invalid ${source} aircraft response`);
+  return payload.ac.map((state) => normalizeAdsbAircraft(state, nowMs, source))
     .filter((aircraft) => aircraft.id && Number.isFinite(aircraft.latitude) && Number.isFinite(aircraft.longitude));
 }
+
+export const normalizeAdsbLolAircraft = (state, nowMs = Date.now()) => normalizeAdsbAircraft(state, nowMs, 'adsb.lol');
+export const normalizeAdsbLolResponse = (payload, nowMs = Date.now()) => normalizeAdsbResponse(payload, nowMs, 'adsb.lol');
+export const normalizeAdsbFiAircraft = (state, nowMs = Date.now()) => normalizeAdsbAircraft(state, nowMs, 'adsb.fi');
+export const normalizeAdsbFiResponse = (payload, nowMs = Date.now()) => normalizeAdsbResponse(payload, nowMs, 'adsb.fi');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAdsbLolResponse, normalizeOpenSkyResponse } from '../src/providers/normalize.js';
+import { normalizeAdsbFiResponse, normalizeAdsbLolResponse, normalizeOpenSkyResponse } from '../src/providers/normalize.js';
 
 test('normalizes state-vector units and removes states without position', () => {
   const payload = { time: 100, states: [
@@ -34,4 +34,11 @@ test('normalizes adsb.lol aircraft units and metadata', () => {
 
 test('rejects malformed adsb.lol response', () => {
   assert.throws(() => normalizeAdsbLolResponse({}), /Invalid adsb.lol/);
+});
+
+test('normalizes adsb.fi v3 aircraft response', () => {
+  const [aircraft] = normalizeAdsbFiResponse({ ac: [{ hex: '7892a2', flight: ' CRK231 ', lat: 25.44, lon: 120.25, track: 220.93 }] }, 100000);
+  assert.equal(aircraft.callsign, 'CRK231');
+  assert.equal(aircraft.track, 220.93);
+  assert.equal(aircraft.source, 'adsb.fi');
 });

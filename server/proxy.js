@@ -3,7 +3,7 @@ import { URL } from 'node:url';
 
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || '127.0.0.1';
-const upstreamBaseUrl = process.env.ADSB_LOL_URL || 'https://api.adsb.lol/v2';
+const upstreamBaseUrl = process.env.ADSB_API_URL || 'https://opendata.adsb.fi/api/v3';
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -32,7 +32,7 @@ async function aircraftResponse(latitude, longitude, distanceNm) {
   if (cache && Date.now() - cache.savedAt < freshForMs) return { ...cache, cacheState: 'fresh' };
   if (Date.now() < rateLimitedUntil) {
     if (cache && Date.now() - cache.savedAt < staleForMs) return { ...cache, cacheState: 'stale' };
-    const error = new Error('adsb.lol rate limit cooldown');
+    const error = new Error('adsb.fi rate limit cooldown');
     error.status = 429;
     error.retryAfterSeconds = Math.ceil((rateLimitedUntil - Date.now()) / 1000);
     throw error;
@@ -46,14 +46,14 @@ async function aircraftResponse(latitude, longitude, distanceNm) {
   }
   const request = (async () => {
     const upstreamUrl = `${upstreamBaseUrl.replace(/\/$/, '')}/lat/${latitude}/lon/${longitude}/dist/${distanceNm}`;
-    const upstream = await fetch(upstreamUrl, { headers: { Accept: 'application/json', 'User-Agent': 'flight-cockpit-tracker/0.1' } });
+    const upstream = await fetch(upstreamUrl, { headers: { Accept: 'application/json', 'User-Agent': 'flight-cockpit-tracker/0.2 (+https://github.com/dksbluesky/flight-cockpit-tracker)' } });
     if (!upstream.ok) {
       if (upstream.status === 429) {
         const retryAfter = upstream.headers.get('retry-after');
         rateLimitedUntil = Date.now() + (retryAfter ? retryAfterMs(retryAfter) : rateLimitBackoffMs);
         if (!retryAfter) rateLimitBackoffMs = Math.min(rateLimitBackoffMs * 2, 600000);
       }
-      const error = new Error(`adsb.lol returned ${upstream.status}`);
+      const error = new Error(`adsb.fi returned ${upstream.status}`);
       error.status = upstream.status;
       error.retryAfterSeconds = upstream.status === 429 ? Math.ceil((rateLimitedUntil - Date.now()) / 1000) : undefined;
       throw error;
@@ -111,4 +111,4 @@ const server = http.createServer(async (request, response) => {
     response.end(JSON.stringify({ error: error.message, retryAfter: error.retryAfterSeconds }));
   }
 });
-server.listen(port, host, () => console.log(`adsb.lol proxy listening on http://${host}:${port}`));
+server.listen(port, host, () => console.log(`adsb.fi proxy listening on http://${host}:${port}`));

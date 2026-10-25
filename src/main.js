@@ -88,7 +88,12 @@ function updateAircraftStatus() {
   const visibleCount = map.countVisible(shownAircraft);
   const label = lastLiveError && activeProviderName === 'live' ? strings[language].delayed : activeProviderName === 'live' ? strings[language].live : lastLiveError ? strings[language].fallback : strings[language].mock;
   status.className = lastLiveError ? 'status error' : 'status';
-  status.textContent = `${label} · ${strings[language].visible}: ${visibleCount.toLocaleString('en-US')} / ${strings[language].total}: ${shownAircraft.length.toLocaleString('en-US')}`;
+  const sourceLink = document.createElement('a');
+  sourceLink.href = 'https://adsb.fi/'; sourceLink.target = '_blank'; sourceLink.rel = 'noopener noreferrer'; sourceLink.textContent = 'adsb.fi';
+  status.replaceChildren(
+    document.createTextNode(`${label} · `), sourceLink,
+    document.createTextNode(` · ${strings[language].visible}: ${visibleCount.toLocaleString('en-US')} / ${strings[language].total}: ${shownAircraft.length.toLocaleString('en-US')}`)
+  );
 }
 function renderAircraft() {
   if (!map) return;
