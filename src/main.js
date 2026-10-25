@@ -331,7 +331,7 @@ function renderCockpitHud(displayed) {
         <g class="flight-path-marker" transform="translate(${markerX} ${markerY})"><circle r="13"/><line x1="-58" x2="-13"/><line x1="13" x2="58"/><line x1="-58" y1="0" x2="-58" y2="15"/><line x1="58" y1="0" x2="58" y2="15"/><line y1="-22" y2="-13"/></g>
         ${showIlsCues ? `
           <g class="ils-glideslope" transform="translate(775 325)">
-            <text x="0" y="-75" text-anchor="middle">G/S</text><line y1="-58" y2="58"/><line x1="-8" x2="8" y1="-58"/><line x1="-8" x2="8" y1="58"/><line x1="-5" x2="5"/>
+            <text x="0" y="-75" text-anchor="middle">G/S</text><line y1="-58" y2="58"/><line x1="-8" x2="8" y1="-58" y2="-58"/><line x1="-8" x2="8" y1="58" y2="58"/><line x1="-5" x2="5"/>
             ${approach ? `<g class="ils-glideslope-marker" transform="translate(0 ${Math.max(-50, Math.min(50, approach.glideslopeOffsetPx - deviceTilt.pitch * 2))})"><path d="M-7 0 L0 -7 L7 0 L0 7 Z"/></g>` : ''}
           </g>
           <g class="ils-localizer" transform="translate(500 450)">
