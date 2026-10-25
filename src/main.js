@@ -27,7 +27,7 @@ let activeProviderName = providerName;
 let hasLiveData = false; let lastLiveError = null;
 let language = localStorage.getItem('fct-language') || (navigator.language.startsWith('zh') ? 'zh-TW' : 'en');
 let filter = 'all'; let aircraft = []; let selected = null; let cockpitRenderer = null; let deferredInstallPrompt = null;
-let tiltPermissionGranted = false; let tiltListening = false; let tiltBaseline = null; let latestTilt = null;
+let tiltPermissionGranted = false; let tiltActive = false; let tiltListening = false; let tiltBaseline = null; let latestTilt = null;
 let deviceTilt = { pitch: 0, roll: 0 };
 let searchLocation = { key: 'taiwan', latitude: 23.7, longitude: 121, distanceNm: 250 };
 let metarWind = null;
@@ -87,7 +87,7 @@ function renderShell() {
     selectedRunway = runwayEnds.find((runway) => runway.airport === arrivalAirport && runway.runway === runwaySelect.value) || null;
     if (cockpitRenderer && selected) renderCockpitHud(selected);
   });
-  document.querySelector('#enable-tilt').addEventListener('click', enableDeviceTilt);
+  document.querySelector('#enable-tilt').addEventListener('click', toggleDeviceTilt);
   document.querySelector('#center-view').addEventListener('click', centerDeviceTilt);
   const install = document.querySelector('#install');
   if (deferredInstallPrompt) install.hidden = false;
@@ -155,10 +155,10 @@ function openCockpit() {
   document.querySelector('#cockpit').classList.remove('hidden');
   map.pause();
   cockpitRenderer = createCockpitRenderer(document.querySelector('#cockpit-scene'), renderCockpitHud);
-  if (tiltPermissionGranted) {
+  if (tiltActive) {
     startTiltListening();
-    document.querySelector('#enable-tilt').textContent = strings[language].tiltEnabled;
-    document.querySelector('#enable-tilt').disabled = true;
+    document.querySelector('#enable-tilt').textContent = strings[language].closeTilt;
+    document.querySelector('#enable-tilt').disabled = false;
     document.querySelector('#center-view').hidden = false;
     document.querySelector('#tilt-status').textContent = strings[language].tiltHint;
   }
@@ -170,9 +170,18 @@ function closeCockpit() {
   cockpit?.classList.add('hidden'); stopTiltListening(); cockpitRenderer?.destroy(); cockpitRenderer = null; map?.resume();
   if (wasOpen) { infoPanelOpen = false; renderPanel(); }
 }
-async function enableDeviceTilt() {
+async function toggleDeviceTilt() {
   const status = document.querySelector('#tilt-status');
   const t = strings[language];
+  if (tiltActive) {
+    tiltActive = false;
+    stopTiltListening();
+    cockpitRenderer?.setDeviceTilt(deviceTilt);
+    document.querySelector('#enable-tilt').textContent = t.enableTilt;
+    document.querySelector('#center-view').hidden = true;
+    status.textContent = '';
+    return;
+  }
   if (!window.isSecureContext || !('DeviceOrientationEvent' in window)) {
     status.textContent = t.tiltUnavailable;
     return;
@@ -183,9 +192,10 @@ async function enableDeviceTilt() {
       if (permission !== 'granted') { status.textContent = t.tiltDenied; return; }
     }
     tiltPermissionGranted = true;
+    tiltActive = true;
     startTiltListening();
-    document.querySelector('#enable-tilt').textContent = t.tiltEnabled;
-    document.querySelector('#enable-tilt').disabled = true;
+    document.querySelector('#enable-tilt').textContent = t.closeTilt;
+    document.querySelector('#enable-tilt').disabled = false;
     document.querySelector('#center-view').hidden = false;
     status.textContent = t.tiltHint;
   } catch {
