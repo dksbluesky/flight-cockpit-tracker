@@ -320,7 +320,7 @@ function renderCockpitHud(displayed) {
         </g>
         <g class="heading-scale" transform="translate(360 105)">${headingTicks}<path class="heading-caret" d="M131 45 L140 57 L149 45"/></g>
         <g class="speed-scale" transform="translate(115 190)"><text class="tape-title" x="0" y="-24">GS KT</text>${speedTicks}<path class="tape-box" d="M-20 77 H78 V106 H-20 L-34 92 Z"/><text class="tape-value" x="28" y="99" text-anchor="middle">${fmt(speedKt)}</text></g>
-        <g class="altitude-scale" transform="translate(825 190)"><text class="tape-title" x="40" y="-24" text-anchor="end">ALT FT</text>${altitudeTicks}<path class="tape-box" d="M-38 77 H60 L74 92 L60 106 H-38 Z"/><text class="tape-value" x="12" y="99" text-anchor="middle">${fmt(altitudeFt)}</text></g>
+        <g class="altitude-scale" transform="translate(825 190)"><text class="tape-title" x="40" y="-24" text-anchor="end">ALT FT</text>${altitudeTicks}<path class="tape-box" d="M-38 77 H60 V106 H-38 Z"/><text class="tape-value" x="12" y="99" text-anchor="middle">${fmt(altitudeFt)}</text></g>
         <g class="pitch-ladder-svg" transform="translate(500 ${300 + pitchOffset}) rotate(${deviceTilt.roll})">
           <g transform="translate(0 -85)"><text x="-128" y="5">+10</text><line x1="-95" x2="-28"/><line x1="28" x2="95"/><text x="108" y="5">+10</text></g>
           <g transform="translate(0 -43)"><text x="-120" y="5">+5</text><line x1="-82" x2="-28"/><line x1="28" x2="82"/><text x="103" y="5">+5</text></g>
