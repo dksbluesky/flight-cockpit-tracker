@@ -288,7 +288,7 @@ async function refresh() {
 
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt = event; const install = document.querySelector('#install'); if (install) install.hidden = false; });
 window.addEventListener('online', refresh); window.addEventListener('offline', refresh);
-renderShell(); initialize(); refresh(); setInterval(refresh, 10000);
+renderShell(); initialize(); refresh(); setInterval(refresh, 30000);
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     if (import.meta.env.PROD) {

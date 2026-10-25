@@ -11,24 +11,68 @@ const allowedOrigins = new Set([
   'http://127.0.0.1:4173',
   ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean)
 ]);
-const freshForMs = 10000;
+const freshForMs = 30000;
 const staleForMs = 300000;
 const caches = new Map();
+const inFlight = new Map();
+let rateLimitedUntil = 0;
+let rateLimitBackoffMs = 60000;
+
+function retryAfterMs(header) {
+  if (!header) return 60000;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(1000, seconds * 1000);
+  const date = Date.parse(header);
+  return Number.isFinite(date) ? Math.max(1000, date - Date.now()) : 60000;
+}
 
 async function aircraftResponse(latitude, longitude, distanceNm) {
   const key = `${latitude},${longitude},${distanceNm}`;
   let cache = caches.get(key);
   if (cache && Date.now() - cache.savedAt < freshForMs) return { ...cache, cacheState: 'fresh' };
-  try {
+  if (Date.now() < rateLimitedUntil) {
+    if (cache && Date.now() - cache.savedAt < staleForMs) return { ...cache, cacheState: 'stale' };
+    const error = new Error('adsb.lol rate limit cooldown');
+    error.status = 429;
+    error.retryAfterSeconds = Math.ceil((rateLimitedUntil - Date.now()) / 1000);
+    throw error;
+  }
+  if (inFlight.has(key)) {
+    try { return { ...await inFlight.get(key), cacheState: 'shared' }; }
+    catch (error) {
+      if (cache && Date.now() - cache.savedAt < staleForMs) return { ...cache, cacheState: 'stale' };
+      throw error;
+    }
+  }
+  const request = (async () => {
     const upstreamUrl = `${upstreamBaseUrl.replace(/\/$/, '')}/lat/${latitude}/lon/${longitude}/dist/${distanceNm}`;
     const upstream = await fetch(upstreamUrl, { headers: { Accept: 'application/json', 'User-Agent': 'flight-cockpit-tracker/0.1' } });
-    if (!upstream.ok) throw new Error(`adsb.lol returned ${upstream.status}`);
-    cache = { body: await upstream.text(), contentType: upstream.headers.get('content-type') || 'application/json', savedAt: Date.now() };
-    caches.set(key, cache);
+    if (!upstream.ok) {
+      if (upstream.status === 429) {
+        const retryAfter = upstream.headers.get('retry-after');
+        rateLimitedUntil = Date.now() + (retryAfter ? retryAfterMs(retryAfter) : rateLimitBackoffMs);
+        if (!retryAfter) rateLimitBackoffMs = Math.min(rateLimitBackoffMs * 2, 600000);
+      }
+      const error = new Error(`adsb.lol returned ${upstream.status}`);
+      error.status = upstream.status;
+      error.retryAfterSeconds = upstream.status === 429 ? Math.ceil((rateLimitedUntil - Date.now()) / 1000) : undefined;
+      throw error;
+    }
+    const result = { body: await upstream.text(), contentType: upstream.headers.get('content-type') || 'application/json', savedAt: Date.now() };
+    caches.set(key, result);
+    rateLimitedUntil = 0;
+    rateLimitBackoffMs = 60000;
+    return result;
+  })();
+  inFlight.set(key, request);
+  try {
+    cache = await request;
     return { ...cache, cacheState: 'live' };
   } catch (error) {
     if (cache && Date.now() - cache.savedAt < staleForMs) return { ...cache, cacheState: 'stale' };
     throw error;
+  } finally {
+    inFlight.delete(key);
   }
 }
 
@@ -62,8 +106,9 @@ const server = http.createServer(async (request, response) => {
     response.writeHead(200, { 'content-type': result.contentType, 'x-aircraft-cache': result.cacheState });
     response.end(result.body);
   } catch (error) {
-    response.writeHead(502, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ error: error.message }));
+    if (error.status === 429 && error.retryAfterSeconds) response.setHeader('Retry-After', String(error.retryAfterSeconds));
+    response.writeHead(error.status === 429 ? 429 : 502, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: error.message, retryAfter: error.retryAfterSeconds }));
   }
 });
 server.listen(port, host, () => console.log(`adsb.lol proxy listening on http://${host}:${port}`));
