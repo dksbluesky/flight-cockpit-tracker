@@ -289,6 +289,7 @@ function renderCockpitHud(displayed) {
   const fmt = (number) => Number.isFinite(number) ? Math.round(number).toLocaleString('en-US') : '---';
   const windDirection = metarWind?.variable ? 'VRB' : Number.isFinite(metarWind?.direction) ? `${String(Math.round(metarWind.direction) % 360).padStart(3, '0')}°` : '---';
   const windSpeed = Number.isFinite(metarWind?.speed) ? `${fmt(metarWind.speed)}${Number.isFinite(metarWind.gust) ? `G${fmt(metarWind.gust)}` : ''} KT` : '--- KT';
+  const windToDirection = Number.isFinite(metarWind?.direction) && Number.isFinite(metarWind?.speed) && metarWind.speed > 0 ? (Math.round(metarWind.direction) + 180) % 360 : null;
   const showIlsCues = altitudeFt < 2000;
   const approach = showIlsCues && !isStale(displayed) && selectedRunway ? ilsDeviation(displayed, selectedRunway) : null;
   const speedTicks = [-40, -20, 0, 20, 40].map((offset, index) => `<g transform="translate(0 ${index * 45})"><line x1="0" x2="18"/><text x="25" y="6">${fmt(speedKt + offset)}</text></g>`).join('');
@@ -305,7 +306,12 @@ function renderCockpitHud(displayed) {
     <svg class="hud-svg" viewBox="0 0 1000 600" role="img" aria-label="${t.simulated}">
       <g class="hud-glow">
         <text class="hud-mode" x="500" y="30" text-anchor="middle">SIMULATED COCKPIT VIEW · ${displayed.callsign || displayed.id}</text>
-        <text class="wind-readout" x="25" y="45">WIND ${metarWind?.station || '—'} · ${windDirection} / ${windSpeed}</text>
+        <g class="wind-compass" transform="translate(56 52)">
+          <circle r="25"/><text x="0" y="-29" text-anchor="middle">N</text><text x="30" y="4" text-anchor="middle">E</text><text x="0" y="35" text-anchor="middle">S</text><text x="-30" y="4" text-anchor="middle">W</text>
+          ${windToDirection === null ? '' : `<g class="wind-arrow" transform="rotate(${windToDirection})"><path d="M0 -17 L-5 3 L0 0 L5 3 Z"/></g>`}
+        </g>
+        <text class="wind-station" x="92" y="38">WIND ${metarWind?.station || '—'}</text>
+        <text class="wind-readout" x="92" y="57">${windDirection} / ${windSpeed}</text>
         <g class="bank-scale" transform="translate(500 80) rotate(${deviceTilt.roll})">
           <path d="M-125 25 A128 128 0 0 1 125 25"/>
           <line x1="-112" y1="-8" x2="-101" y2="1"/><line x1="-82" y1="-35" x2="-73" y2="-23"/><line x1="-43" y1="-51" x2="-38" y2="-36"/>
@@ -324,15 +330,15 @@ function renderCockpitHud(displayed) {
         </g>
         <g class="flight-path-marker" transform="translate(${markerX} ${markerY})"><circle r="13"/><line x1="-58" x2="-13"/><line x1="13" x2="58"/><line x1="-58" y1="0" x2="-58" y2="15"/><line x1="58" y1="0" x2="58" y2="15"/><line y1="-22" y2="-13"/></g>
         ${showIlsCues ? `
-          <g class="ils-glideslope" transform="translate(245 325)">
+          <g class="ils-glideslope" transform="translate(775 325)">
             <text x="0" y="-75" text-anchor="middle">G/S</text><line y1="-58" y2="58"/><line x1="-8" x2="8" y1="-58"/><line x1="-8" x2="8" y1="58"/><line x1="-5" x2="5"/>
             ${approach ? `<g class="ils-glideslope-marker" transform="translate(0 ${Math.max(-50, Math.min(50, approach.glideslopeOffsetPx - deviceTilt.pitch * 2))})"><path d="M-7 0 L0 -7 L7 0 L0 7 Z"/></g>` : ''}
           </g>
-          <g class="ils-localizer" transform="translate(500 520)">
+          <g class="ils-localizer" transform="translate(500 450)">
             <text x="0" y="-24" text-anchor="middle">LOC</text><line x1="-58" x2="58"/><line y1="-8" y2="8"/><line x1="-58" x2="-58" y1="-8" y2="8"/><line x1="58" x2="58" y1="-8" y2="8"/>
             ${approach ? `<g class="ils-localizer-marker" transform="translate(${Math.max(-50, Math.min(50, approach.localizerOffsetPx - deviceTilt.roll * 2))} 0)"><path d="M0 -7 L7 0 L0 7 L-7 0 Z"/></g>` : ''}
           </g>
-          <text class="ils-runway-label" x="500" y="485" text-anchor="middle">ILS SIM · ${selectedRunway ? `${selectedRunway.airport} ${selectedRunway.runway} · ${approach ? `${fmt(approach.distanceNm)} NM` : 'NO APPROACH DATA'}` : 'NO RUNWAY SELECTED'}</text>` : ''}
+          <text class="ils-runway-label" x="500" y="410" text-anchor="middle">ILS SIM · ${selectedRunway ? `${selectedRunway.airport} ${selectedRunway.runway} · ${approach ? `${fmt(approach.distanceNm)} NM` : 'NO APPROACH DATA'}` : 'NO RUNWAY SELECTED'}</text>` : ''}
         <text class="vertical-rate-text" x="865" y="430" text-anchor="middle">V/S ${verticalFpm >= 0 ? '+' : '−'}${fmt(Math.abs(verticalFpm))} FPM</text>
         <g class="nav-arc" transform="translate(500 570)"><path d="M-110 15 A112 112 0 0 1 110 15"/><line x1="-94" y1="-43" x2="-82" y2="-35"/><line x1="-55" y1="-80" x2="-47" y2="-67"/><line y1="-94" y2="-77"/><line x1="55" y1="-80" x2="47" y2="-67"/><line x1="94" y1="-43" x2="82" y2="-35"/><path d="M-8 -70 L0 -84 L8 -70"/><text x="0" y="-44" text-anchor="middle">TRK ${fmt(track)}°</text></g>
         <text class="hud-age" x="25" y="575">DATA ${fmt(dataAgeSeconds(displayed))}s · ${displayed.source}</text>
